@@ -425,19 +425,16 @@ inSillico/
 
 ---
 
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
 ## 👥 Team
 
 <!-- Update with your hackathon team details -->
 
-| Name | Role | GitHub |
-|------|------|--------|
-| Your Name | Full-Stack Developer + ML Engineer | [@username](https://github.com/username) |
+| Names | 
+|------|
+| Parmeet Singh |
+| Chetan Sharma |
+| Niharika Khosla |
+| Muskan Bindal |
 
 ---
 
