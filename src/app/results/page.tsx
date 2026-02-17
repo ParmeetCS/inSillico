@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
+import MoleculeViewer3D from "@/components/molecule-viewer-3d";
 
 /* ─── Types ─── */
 interface SimulationFromDB {
@@ -465,11 +466,15 @@ export default function ResultsIndexPage() {
                                     }}
                                 >
                                     <div style={{ display: "grid", gridTemplateColumns: "340px 1fr 280px", minHeight: 0 }}>
-                                        {/* Left — Molecule Info */}
+                                        {/* Left — Molecule Info + 3D */}
                                         <div style={{
                                             padding: "20px 24px", borderRight: "1px solid var(--glass-border)",
                                             display: "flex", flexDirection: "column", gap: 14,
                                         }}>
+                                            {/* 3D Viewer */}
+                                            <div style={{ height: 180, borderRadius: 10, overflow: "hidden", background: "rgba(0,0,0,0.2)", border: "1px solid var(--glass-border)", position: "relative" }}>
+                                                <MoleculeViewer3D smiles={sim.smiles || undefined} height="180px" spinning={false} compact />
+                                            </div>
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                                 <div>
                                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>

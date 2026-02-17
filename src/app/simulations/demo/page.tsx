@@ -216,6 +216,20 @@ export default function SimulationDemoPage() {
         },
     } : FALLBACK_RESULTS;
 
+    /* ── Build chart data from results ── */
+    const chartData = {
+        logP: typeof DEMO_RESULTS.logP?.value === "number" ? DEMO_RESULTS.logP.value : undefined,
+        mw: mlResults?.molecule?.molecular_weight ?? ASPIRIN.mw,
+        tpsa: typeof DEMO_RESULTS.tpsa?.value === "number" ? DEMO_RESULTS.tpsa.value : undefined,
+        pKa: typeof DEMO_RESULTS.pKa?.value === "number" ? DEMO_RESULTS.pKa.value : undefined,
+        solubility: typeof DEMO_RESULTS.solubility?.value === "number" ? DEMO_RESULTS.solubility.value : undefined,
+        bioavailability: typeof DEMO_RESULTS.bioavailability?.value === "number" ? DEMO_RESULTS.bioavailability.value : undefined,
+        herg: mlResults?.toxicity_screening?.herg_inhibition ?? 18,
+        ames: mlResults?.toxicity_screening?.ames_mutagenicity ?? 12,
+        hepato: mlResults?.toxicity_screening?.hepatotoxicity ?? 25,
+        moleculeName: "Aspirin",
+    };
+
     /* ═══════════════ Running Phase ═══════════════ */
     if (phase === "running") {
         return (
@@ -347,10 +361,10 @@ export default function SimulationDemoPage() {
                                     exit={{ opacity: 0, y: -10 }}
                                     transition={{ duration: 0.2 }}
                                 >
-                                    {activeChart === "radar" && <RadarPropertyChart height={340} />}
-                                    {activeChart === "bar" && <PropertyBarChart height={300} />}
-                                    {activeChart === "gauges" && <ToxicityGauges height={220} />}
-                                    {activeChart === "solubility" && <SolubilityCurve height={300} />}
+                                    {activeChart === "radar" && <RadarPropertyChart height={340} data={chartData} />}
+                                    {activeChart === "bar" && <PropertyBarChart height={300} data={chartData} />}
+                                    {activeChart === "gauges" && <ToxicityGauges height={220} data={chartData} />}
+                                    {activeChart === "solubility" && <SolubilityCurve height={300} data={chartData} />}
                                 </motion.div>
                             </AnimatePresence>
                         </GlassCard>

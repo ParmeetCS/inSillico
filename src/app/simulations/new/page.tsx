@@ -241,6 +241,26 @@ function SimulationSetupInner() {
 
     const displayResults = simulationResults ? buildDisplayResults(simulationResults) : {};
 
+    /* ─── Build chart data from simulation results ─── */
+    const chartData = simulationResults ? {
+        logP: typeof displayResults.logP?.value === "number" ? displayResults.logP.value : undefined,
+        mw: molecule?.molecular_weight ?? undefined,
+        tpsa: typeof displayResults.tpsa?.value === "number" ? displayResults.tpsa.value : undefined,
+        pKa: typeof displayResults.pKa?.value === "number" ? displayResults.pKa.value : undefined,
+        solubility: typeof displayResults.solubility?.value === "number" ? displayResults.solubility.value : undefined,
+        bioavailability: typeof displayResults.bioavailability?.value === "number" ? displayResults.bioavailability.value : undefined,
+        herg: simulationResults.toxicity?.herg_inhibition?.probability != null
+            ? Math.round(simulationResults.toxicity.herg_inhibition.probability * 100)
+            : undefined,
+        ames: simulationResults.toxicity?.ames_mutagenicity?.probability != null
+            ? Math.round(simulationResults.toxicity.ames_mutagenicity.probability * 100)
+            : undefined,
+        hepato: simulationResults.toxicity?.hepatotoxicity?.probability != null
+            ? Math.round(simulationResults.toxicity.hepatotoxicity.probability * 100)
+            : undefined,
+        moleculeName: molecule?.name ?? "Compound",
+    } : undefined;
+
     /* ═══════════════ No Molecule Selected ═══════════════ */
     if (!moleculeId) {
         return (
@@ -393,10 +413,10 @@ function SimulationSetupInner() {
                                     exit={{ opacity: 0, y: -10 }}
                                     transition={{ duration: 0.2 }}
                                 >
-                                    {activeChart === "radar" && <RadarPropertyChart height={340} />}
-                                    {activeChart === "bar" && <PropertyBarChart height={300} />}
-                                    {activeChart === "gauges" && <ToxicityGauges height={220} />}
-                                    {activeChart === "solubility" && <SolubilityCurve height={300} />}
+                                    {activeChart === "radar" && <RadarPropertyChart height={340} data={chartData} />}
+                                    {activeChart === "bar" && <PropertyBarChart height={300} data={chartData} />}
+                                    {activeChart === "gauges" && <ToxicityGauges height={220} data={chartData} />}
+                                    {activeChart === "solubility" && <SolubilityCurve height={300} data={chartData} />}
                                 </motion.div>
                             </AnimatePresence>
                         </GlassCard>

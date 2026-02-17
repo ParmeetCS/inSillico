@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
+import MoleculeViewer3D from "@/components/molecule-viewer-3d";
 import {
     Radar,
     RadarChart,
@@ -213,7 +214,18 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
             <div style={{ display: "grid", gridTemplateColumns: "300px 1fr 300px", gap: 20 }}>
                 {/* Left — Molecule Info */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <GlassCard glow="blue">
+                    {/* 3D Molecule Viewer */}
+                    <GlassCard glow="blue" padding="0" style={{ overflow: "hidden" }}>
+                        <div style={{ padding: "14px 16px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>3D Structure</div>
+                            <span style={{ fontSize: "0.68rem", padding: "2px 8px", borderRadius: 6, background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)", fontWeight: 600 }}>Interactive</span>
+                        </div>
+                        <div style={{ height: 240, padding: "8px 8px 8px" }}>
+                            <MoleculeViewer3D smiles={sim.molecule?.smiles || undefined} />
+                        </div>
+                    </GlassCard>
+
+                    <GlassCard>
                         <div style={{ fontWeight: 600, fontSize: "0.9rem", marginBottom: 12 }}>Molecule</div>
                         <div style={{
                             padding: "10px 14px",
