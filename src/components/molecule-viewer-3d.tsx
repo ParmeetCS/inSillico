@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { RotateCw, Maximize2, Loader2, AlertCircle } from "lucide-react";
+import { RotateCw, Maximize2, Minimize2, Loader2, AlertCircle } from "lucide-react";
 
 /* ─── Fallback Aspirin SDF (V2000) only if nothing else is provided ─── */
 const ASPIRIN_SDF = `
@@ -128,6 +128,7 @@ interface Props {
   width?: string;
   height?: string;
   spinning?: boolean;
+  compact?: boolean;
 }
 
 export default function MoleculeViewer3D({
@@ -136,6 +137,7 @@ export default function MoleculeViewer3D({
   width = "100%",
   height = "100%",
   spinning: initialSpin = true,
+  compact = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -144,6 +146,7 @@ export default function MoleculeViewer3D({
   const [resolvedSDF, setResolvedSDF] = useState<string | null>(sdfData || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const prevSmiles = useRef<string | undefined>(undefined);
 
   /* Load 3Dmol.js from CDN */
@@ -240,10 +243,41 @@ export default function MoleculeViewer3D({
     viewerRef.current?.render();
   };
 
+  const toggleExpand = () => {
+    setExpanded(prev => !prev);
+    // Re-render viewer after transition to fill new size
+    setTimeout(() => {
+      viewerRef.current?.resize();
+      viewerRef.current?.zoomTo();
+      viewerRef.current?.zoom(1.15);
+      viewerRef.current?.render();
+    }, 50);
+  };
+
+  /* Escape key to close expanded */
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") toggleExpand(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
   const isLoading = !libLoaded || loading;
 
+  const wrapperStyle: React.CSSProperties = expanded
+    ? {
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
+        padding: 32, display: "flex", flexDirection: "column",
+      }
+    : {
+        position: "relative", width, height,
+        minHeight: compact ? 0 : 260,
+      };
+
   return (
-    <div style={{ position: "relative", width, height, minHeight: 260 }}>
+    <div style={wrapperStyle}>
       {/* Loading overlay */}
       {isLoading && (
         <div style={{
@@ -274,7 +308,9 @@ export default function MoleculeViewer3D({
       <div
         ref={containerRef}
         style={{
-          width: "100%", height: "100%", borderRadius: 12,
+          width: "100%", height: expanded ? undefined : "100%",
+          flex: expanded ? 1 : undefined,
+          borderRadius: 12,
           background: "radial-gradient(ellipse at center, rgba(20,30,60,0.8) 0%, rgba(8,12,28,0.95) 100%)",
           overflow: "hidden",
         }}
@@ -298,19 +334,31 @@ export default function MoleculeViewer3D({
           <RotateCw size={14} />
         </button>
         <button
-          onClick={resetView}
-          title="Reset view"
+          onClick={toggleExpand}
+          title={expanded ? "Exit fullscreen" : "Expand to fullscreen"}
           style={{
             width: 32, height: 32, borderRadius: 8,
-            background: "rgba(255,255,255,0.08)",
+            background: expanded ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.08)",
             border: "1px solid rgba(255,255,255,0.12)", color: "#cbd5e1",
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.2s",
           }}
         >
-          <Maximize2 size={14} />
+          {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
       </div>
+
+      {/* Expanded close hint */}
+      {expanded && (
+        <div style={{
+          position: "absolute", top: 16, right: 16, zIndex: 4,
+          padding: "6px 14px", borderRadius: 8,
+          background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)",
+          fontSize: "0.75rem", color: "#94a3b8", cursor: "pointer",
+        }} onClick={toggleExpand}>
+          Press Esc or click to close
+        </div>
+      )}
     </div>
   );
 }

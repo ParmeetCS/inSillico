@@ -1,5 +1,6 @@
 flask>=3.0
 flask-cors>=4.0
+rdkit
 xgboost>=2.0
 scikit-learn>=1.4
 pandas>=2.1

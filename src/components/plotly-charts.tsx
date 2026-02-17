@@ -8,6 +8,23 @@ declare global {
     }
 }
 
+/* ─── Shared data interface for all chart components ─── */
+export interface ChartData {
+    logP?: number;
+    mw?: number;
+    hbd?: number;
+    hba?: number;
+    tpsa?: number;
+    rotBonds?: number;
+    pKa?: number;
+    solubility?: number;
+    bioavailability?: number;
+    herg?: number;
+    ames?: number;
+    hepato?: number;
+    moleculeName?: string;
+}
+
 /* ─── Load Plotly CDN ─── */
 function usePlotly() {
     const [ready, setReady] = useState(false);
@@ -41,22 +58,30 @@ const DARK_LAYOUT = {
 /* ═══════════════════════════════════════════════════════
    1. Radar Chart — Drug-likeness (Lipinski Rule of 5)
    ═══════════════════════════════════════════════════════ */
-export function RadarPropertyChart({ height = 320 }: { height?: number }) {
+export function RadarPropertyChart({ height = 320, data }: { height?: number; data?: ChartData }) {
     const ref = useRef<HTMLDivElement>(null);
     const ready = usePlotly();
+    const d = data ?? {};
+    const logP = d.logP ?? 1.43;
+    const mw = d.mw ?? 180.16;
+    const hbd = d.hbd ?? 1;
+    const hba = d.hba ?? 4;
+    const tpsa = d.tpsa ?? 63.6;
+    const rotBonds = d.rotBonds ?? 3;
+    const name = d.moleculeName ?? "Compound";
 
     useEffect(() => {
         if (!ready || !ref.current) return;
         const categories = ["LogP", "MW", "HBD", "HBA", "TPSA", "RotBonds"];
         window.Plotly.newPlot(ref.current, [{
             type: "scatterpolar",
-            r: [1.43, 180.16, 1, 4, 63.6, 3],
+            r: [logP, mw, hbd, hba, tpsa, rotBonds],
             theta: categories,
             fill: "toself",
             fillcolor: "rgba(59,130,246,0.15)",
             line: { color: "#3b82f6", width: 2 },
             marker: { color: "#60a5fa", size: 6 },
-            name: "Aspirin",
+            name,
         }, {
             type: "scatterpolar",
             r: [5, 500, 5, 10, 140, 10],
@@ -76,7 +101,7 @@ export function RadarPropertyChart({ height = 320 }: { height?: number }) {
             showlegend: true,
             height,
         }, { responsive: true, displayModeBar: false });
-    }, [ready, height]);
+    }, [ready, height, logP, mw, hbd, hba, tpsa, rotBonds, name]);
 
     return <div ref={ref} style={{ width: "100%", minHeight: height }} />;
 }
@@ -84,14 +109,20 @@ export function RadarPropertyChart({ height = 320 }: { height?: number }) {
 /* ═══════════════════════════════════════════════════════
    2. Bar Chart — Physicochemical Properties
    ═══════════════════════════════════════════════════════ */
-export function PropertyBarChart({ height = 280 }: { height?: number }) {
+export function PropertyBarChart({ height = 280, data }: { height?: number; data?: ChartData }) {
     const ref = useRef<HTMLDivElement>(null);
     const ready = usePlotly();
+    const d = data ?? {};
+    const logP = d.logP ?? 1.43;
+    const pKa = d.pKa ?? 3.49;
+    const sol = d.solubility ?? 4.6;
+    const tpsa = d.tpsa ?? 63.6;
+    const bio = d.bioavailability ?? 68;
 
     useEffect(() => {
         if (!ready || !ref.current) return;
         const props = ["LogP", "pKa", "Solubility\n(mg/mL)", "TPSA\n(Å²)", "Bioavail.\n(%)"];
-        const vals = [1.43, 3.49, 4.6, 63.6, 68];
+        const vals = [logP, pKa, sol, tpsa, bio];
         const colors = ["#3b82f6", "#8b5cf6", "#06b6d4", "#f59e0b", "#22c55e"];
 
         window.Plotly.newPlot(ref.current, [{
@@ -102,7 +133,7 @@ export function PropertyBarChart({ height = 280 }: { height?: number }) {
                 color: colors,
                 line: { color: colors.map(c => c + "cc"), width: 1 },
             },
-            text: vals.map(v => v.toString()),
+            text: vals.map(v => typeof v === "number" ? (Number.isInteger(v) ? v.toString() : v.toFixed(2)) : String(v)),
             textposition: "outside",
             textfont: { color: "#e2e8f0", size: 11 },
         }], {
@@ -113,7 +144,7 @@ export function PropertyBarChart({ height = 280 }: { height?: number }) {
             height,
             bargap: 0.35,
         }, { responsive: true, displayModeBar: false });
-    }, [ready, height]);
+    }, [ready, height, logP, pKa, sol, tpsa, bio]);
 
     return <div ref={ref} style={{ width: "100%", minHeight: height }} />;
 }
@@ -121,9 +152,13 @@ export function PropertyBarChart({ height = 280 }: { height?: number }) {
 /* ═══════════════════════════════════════════════════════
    3. Gauge Charts — Toxicity Risk
    ═══════════════════════════════════════════════════════ */
-export function ToxicityGauges({ height = 200 }: { height?: number }) {
+export function ToxicityGauges({ height = 200, data }: { height?: number; data?: ChartData }) {
     const ref = useRef<HTMLDivElement>(null);
     const ready = usePlotly();
+    const d = data ?? {};
+    const herg = d.herg ?? 18;
+    const ames = d.ames ?? 12;
+    const hepato = d.hepato ?? 25;
 
     useEffect(() => {
         if (!ready || !ref.current) return;
@@ -148,15 +183,15 @@ export function ToxicityGauges({ height = 200 }: { height?: number }) {
         });
 
         window.Plotly.newPlot(ref.current, [
-            makeGauge("hERG Inhibition", 18, { x: [0, 0.33] }),
-            makeGauge("Ames Mutagenicity", 12, { x: [0.34, 0.66] }),
-            makeGauge("Hepatotoxicity", 25, { x: [0.67, 1] }),
+            makeGauge("hERG Inhibition", herg, { x: [0, 0.33] }),
+            makeGauge("Ames Mutagenicity", ames, { x: [0.34, 0.66] }),
+            makeGauge("Hepatotoxicity", hepato, { x: [0.67, 1] }),
         ], {
             ...DARK_LAYOUT,
             height,
             margin: { t: 24, b: 8, l: 24, r: 24 },
         }, { responsive: true, displayModeBar: false });
-    }, [ready, height]);
+    }, [ready, height, herg, ames, hepato]);
 
     return <div ref={ref} style={{ width: "100%", minHeight: height }} />;
 }
@@ -164,14 +199,23 @@ export function ToxicityGauges({ height = 200 }: { height?: number }) {
 /* ═══════════════════════════════════════════════════════
    4. Solubility pH Curve
    ═══════════════════════════════════════════════════════ */
-export function SolubilityCurve({ height = 280 }: { height?: number }) {
+export function SolubilityCurve({ height = 280, data }: { height?: number; data?: ChartData }) {
     const ref = useRef<HTMLDivElement>(null);
     const ready = usePlotly();
+    const d = data ?? {};
+    const pKa = d.pKa ?? 3.49;
+    const maxSol = d.solubility ?? 93.1;
+    const name = d.moleculeName ?? "Compound";
 
     useEffect(() => {
         if (!ready || !ref.current) return;
+        // Generate pH-dependent solubility curve using Henderson–Hasselbalch (weak acid)
         const pH = [1, 2, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.4, 8, 9, 10, 11, 12, 13];
-        const sol = [0.2, 0.3, 0.8, 1.6, 3.2, 5.8, 9.4, 14.2, 20.1, 28.3, 38.5, 45.2, 55.0, 68.4, 78.1, 85.3, 90.2, 93.1];
+        const sol = pH.map(p => {
+            const ratio = Math.pow(10, p - pKa);
+            const fraction = ratio / (1 + ratio);
+            return Math.round(fraction * maxSol * 10) / 10;
+        });
 
         window.Plotly.newPlot(ref.current, [{
             type: "scatter",
@@ -182,11 +226,11 @@ export function SolubilityCurve({ height = 280 }: { height?: number }) {
             marker: { color: "#22d3ee", size: 5 },
             fill: "tozeroy",
             fillcolor: "rgba(6,182,212,0.08)",
-            name: "Solubility",
+            name,
         }, {
             type: "scatter",
             x: [7.4, 7.4],
-            y: [0, 95],
+            y: [0, maxSol * 1.05],
             mode: "lines",
             line: { color: "#f59e0b", width: 1.5, dash: "dash" },
             name: "Physiological pH",
@@ -198,7 +242,7 @@ export function SolubilityCurve({ height = 280 }: { height?: number }) {
             showlegend: true,
             height,
         }, { responsive: true, displayModeBar: false });
-    }, [ready, height]);
+    }, [ready, height, pKa, maxSol, name]);
 
     return <div ref={ref} style={{ width: "100%", minHeight: height }} />;
 }
