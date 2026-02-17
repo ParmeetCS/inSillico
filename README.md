@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="https://img.icons8.com/fluency/96/dna-helix.png" alt="InSilico Formulator" width="80" />
+  <img width="969" height="1161" alt="Gemini_Generated_Image_c2bzihc2bzihc2bz" src="https://github.com/user-attachments/assets/1a259672-4b3c-45f2-94e5-bcdf682ba972" />
+
 </p>
 
 <h1 align="center">🧬 InSilico Formulator</h1>
