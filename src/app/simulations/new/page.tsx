@@ -222,24 +222,37 @@ function SimulationSetupInner() {
                 credits_remaining: (profile?.credits ?? 0) - estimatedCost,
             });
 
-            // Save to Supabase via the save API
+            // Save simulation record to the simulations table
+            const startedAt = new Date(startTime).toISOString();
+            const completedAt = new Date().toISOString();
+
             try {
-                await fetch("/api/predict/save", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        smiles: molecule.smiles,
-                        molecule_name: molecule.name,
-                        formula: molecule.formula || mlData.molecule?.formula || null,
-                        molecular_weight: molecule.molecular_weight || mlData.molecule?.molecular_weight || null,
-                        properties: props,
-                        toxicity_screening: tox,
-                        confidence,
-                        runtime_ms: runtimeMs,
-                    }),
-                });
+                const { data: simRecord } = await supabase
+                    .from("simulations")
+                    .insert({
+                        user_id: user.id,
+                        molecule_id: molecule.id,
+                        status: "completed",
+                        config_json: {
+                            properties: selectedProps,
+                            temperature,
+                            pressure,
+                            solvent,
+                        },
+                        result_json: results,
+                        compute_cost: estimatedCost,
+                        confidence_score: confidence,
+                        started_at: startedAt,
+                        completed_at: completedAt,
+                    })
+                    .select("id")
+                    .single();
+
+                if (simRecord) {
+                    setResultsMeta((prev: Record<string, unknown>) => ({ ...prev, simulation_id: simRecord.id }));
+                }
             } catch {
-                console.warn("Failed to save prediction — results still shown");
+                console.warn("Failed to save simulation — results still shown");
             }
 
             // Deduct credits
@@ -517,7 +530,7 @@ function SimulationSetupInner() {
                                 ["Pressure", `${pressure} atm`],
                                 ["Solvent", solvent === "water" ? "Water (TIP3P)" : solvent],
                                 ["Compute Cost", `${resultsMeta?.compute_cost || estimatedCost} credits`],
-                                ["Confidence", resultsMeta?.confidence_score ? `${Math.round(resultsMeta.confidence_score * 100)}%` : "—"],
+                                ["Confidence", resultsMeta?.confidence_score ? `${Number(resultsMeta.confidence_score).toFixed(1)}%` : "—"],
                             ].map(([label, val]) => (
                                 <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "0.78rem" }}>
                                     <span style={{ color: "var(--text-muted)" }}>{label}</span>
@@ -526,8 +539,20 @@ function SimulationSetupInner() {
                             ))}
                         </GlassCard>
 
+                        {resultsMeta?.simulation_id && (
+                            <motion.button
+                                className="btn-primary"
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.97 }}
+                                onClick={() => router.push(`/results/${resultsMeta.simulation_id}`)}
+                                style={{ width: "100%", justifyContent: "center", padding: "12px 24px", background: "linear-gradient(135deg, #7c3aed, #3b82f6)" }}
+                            >
+                                View Detailed Results →
+                            </motion.button>
+                        )}
+
                         <motion.button
-                            className="btn-primary"
+                            className="btn-secondary"
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.97 }}
                             onClick={() => { setPhase("setup"); setProgress(0); }}

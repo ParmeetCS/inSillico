@@ -156,8 +156,11 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
         propEntries.push({ name: "Solubility", value: `${solVal.toFixed(1)} mg/mL`, badge: a.label, badgeColor: a.color });
     }
     if (bioVal != null) {
-        const a = assessValue("bioavailability", bioVal);
-        propEntries.push({ name: "Bioavailability", value: bioVal.toFixed(2), badge: a.label, badgeColor: a.color });
+        // bioVal may be a fraction (0.74 from score) or percentage (74 from value); normalize
+        const pctVal = bioVal <= 1 ? Math.round(bioVal * 100) : Math.round(bioVal);
+        const fracVal = bioVal <= 1 ? bioVal : bioVal / 100;
+        const a = assessValue("bioavailability", fracVal);
+        propEntries.push({ name: "Bioavailability", value: `${pctVal}%`, badge: a.label, badgeColor: a.color });
     }
 
     // Radar chart data
@@ -165,7 +168,7 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
         { property: "Lipophilicity", value: logpVal != null ? Math.min(1, logpVal / 5) : 0 },
         { property: "Polarity", value: tpsaVal != null ? Math.min(1, tpsaVal / 140) : 0 },
         { property: "Solubility", value: solVal != null ? Math.min(1, solVal / 10) : 0 },
-        { property: "Bioavail.", value: bioVal != null ? bioVal : 0 },
+        { property: "Bioavail.", value: bioVal != null ? (bioVal <= 1 ? bioVal : bioVal / 100) : 0 },
         { property: "pKa", value: pkaVal != null ? Math.min(1, pkaVal / 14) : 0 },
     ];
 
