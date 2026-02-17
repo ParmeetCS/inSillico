@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="500" height="500" alt="Gemini_Generated_Image_c2bzihc2bzihc2bz" src="https://github.com/user-attachments/assets/1a259672-4b3c-45f2-94e5-bcdf682ba972" />
+  <img width="200" height="200" alt="Gemini_Generated_Image_c2bzihc2bzihc2bz" src="https://github.com/user-attachments/assets/1a259672-4b3c-45f2-94e5-bcdf682ba972" />
 
 </p>
 
