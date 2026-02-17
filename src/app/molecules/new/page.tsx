@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -10,19 +10,25 @@ import {
     Atom,
     FileText,
     Loader2,
+    Hexagon,
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
+import MoleculeDrawer from "@/components/molecule-drawer";
 
 export default function MoleculeInputPage() {
     const { user } = useAuth();
     const router = useRouter();
     const supabase = createClient();
 
-    const [activeTab, setActiveTab] = useState<"draw" | "upload">("draw");
+    const [activeTab, setActiveTab] = useState<"smiles" | "sketch" | "upload">("smiles");
+
+    const handleDrawerSmiles = useCallback((s: string) => { if (s) setSmiles(s); }, []);
+    const handleDrawerFormula = useCallback((f: string) => { if (f) setFormula(f); }, []);
+    const handleDrawerMW = useCallback((mw: number) => { if (mw) setMolecularWeight(String(mw)); }, []);
     const [smiles, setSmiles] = useState("");
     const [name, setName] = useState("");
     const [formula, setFormula] = useState("");
@@ -159,13 +165,14 @@ export default function MoleculeInputPage() {
                         Define Your Molecule
                     </h1>
                     <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: 24 }}>
-                        Enter a SMILES string or upload a structure file
+                        Enter a SMILES string, draw a structure, or upload a file
                     </p>
 
                     {/* Tabs */}
                     <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
                         {[
-                            { key: "draw" as const, label: "SMILES Input", icon: Pencil },
+                            { key: "smiles" as const, label: "SMILES Input", icon: Pencil },
+                            { key: "sketch" as const, label: "Draw Structure", icon: Hexagon },
                             { key: "upload" as const, label: "Upload File", icon: Upload },
                         ].map((tab) => {
                             const Icon = tab.icon;
@@ -197,7 +204,7 @@ export default function MoleculeInputPage() {
                         })}
                     </div>
 
-                    {activeTab === "draw" ? (
+                    {activeTab === "smiles" ? (
                         <GlassCard>
                             <div style={{ marginBottom: 20 }}>
                                 <label style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 8 }}>
@@ -255,6 +262,40 @@ export default function MoleculeInputPage() {
                                 />
                             </div>
                         </GlassCard>
+                    ) : activeTab === "sketch" ? (
+                        <div>
+                            <MoleculeDrawer
+                                onSmilesChange={handleDrawerSmiles}
+                                onFormulaChange={handleDrawerFormula}
+                                onMWChange={handleDrawerMW}
+                            />
+                            {smiles && (
+                                <GlassCard className="" glow="blue" padding="16px" style={{ marginTop: 16 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                        <Atom size={14} style={{ color: "var(--accent-blue)" }} />
+                                        <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-secondary)" }}>Generated SMILES</span>
+                                    </div>
+                                    <code style={{
+                                        display: "block", padding: "8px 12px", borderRadius: 8,
+                                        background: "rgba(59,130,246,0.08)", fontSize: "0.85rem",
+                                        fontFamily: "monospace", color: "var(--accent-blue-light)",
+                                        wordBreak: "break-all",
+                                    }}>{smiles}</code>
+                                    <div style={{ marginTop: 12 }}>
+                                        <label style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 8 }}>
+                                            Compound Name
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="input"
+                                            placeholder="e.g. Aspirin Analog"
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                        />
+                                    </div>
+                                </GlassCard>
+                            )}
+                        </div>
                     ) : (
                         <GlassCard>
                             <div
