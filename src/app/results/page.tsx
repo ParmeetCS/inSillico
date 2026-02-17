@@ -227,7 +227,7 @@ export default function ResultsIndexPage() {
                 next.delete(dbId);
             } else {
                 if (next.size >= 3) {
-                    toast("Maximum 3 compounds for comparison", "error");
+                    setTimeout(() => toast("Maximum 3 compounds for comparison", "error"), 0);
                     return prev;
                 }
                 next.add(dbId);
