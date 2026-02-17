@@ -30,7 +30,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 sys.path.insert(0, os.path.dirname(__file__))
-from descriptors import compute_descriptors, get_feature_names, get_rdkit_properties
+from descriptors import compute_descriptors, get_feature_names, get_rdkit_properties, compute_drug_likeness
 
 # ─── Config ───
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
@@ -317,6 +317,9 @@ def predict():
                 "hba_ok": hba <= 10,
             },
 
+            # ── Drug-Likeness Score (Lipinski + Veber + PAINS + QED) ──
+            "drug_likeness": compute_drug_likeness(smiles),
+
             # ── Confidence (based on descriptor coverage and model training) ──
             "confidence": round(min(98, 85 + rdkit_props["qed"] * 15), 1),
         }
@@ -346,6 +349,21 @@ def get_descriptors():
             "descriptors": desc,
             "rdkit_properties": props,
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/drug-likeness", methods=["POST"])
+def drug_likeness():
+    """Compute drug-likeness score with Lipinski, Veber, PAINS, QED."""
+    data = request.get_json()
+    if not data or "smiles" not in data:
+        return jsonify({"error": "Missing 'smiles'"}), 400
+
+    try:
+        smiles = data["smiles"].strip()
+        result = compute_drug_likeness(smiles)
+        return jsonify({"smiles": smiles, **result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

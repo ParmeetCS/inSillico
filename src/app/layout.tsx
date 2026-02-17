@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/layout/navbar";
 import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/ui/toast";
+import VoiceAssistant from "@/components/voice-assistant";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -45,6 +46,7 @@ export default function RootLayout({
             <div className="particle-bg" />
             <div className="molecule-grid" />
             <Navbar />
+            <VoiceAssistant />
             {children}
           </ToastProvider>
         </AuthProvider>

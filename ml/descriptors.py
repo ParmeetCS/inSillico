@@ -12,6 +12,7 @@ from typing import Dict, List
 # ─── RDKit imports ───
 from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors, Lipinski, Crippen, MolSurf
+from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
 
 
 def compute_descriptors(smiles: str) -> Dict[str, float]:
@@ -156,6 +157,108 @@ def get_rdkit_properties(smiles: str) -> Dict:
     }
 
 
+# ─── PAINS filter catalog (loaded once) ───
+_pains_params = FilterCatalogParams()
+_pains_params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS)
+_pains_catalog = FilterCatalog(_pains_params)
+
+
+def compute_drug_likeness(smiles: str) -> Dict:
+    """
+    Compute a comprehensive drug-likeness assessment including:
+      - Lipinski Rule of Five
+      - Veber rules (oral bioavailability)
+      - PAINS filter (pan-assay interference)
+      - QED (quantitative estimate of drug-likeness)
+      - Overall Drugability Score (0–100) with letter grade
+
+    Returns a dictionary suitable for JSON serialisation to the frontend.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise ValueError(f"Invalid SMILES: {smiles}")
+
+    mw = Descriptors.MolWt(mol)
+    logp = Crippen.MolLogP(mol)
+    hbd = Descriptors.NumHDonors(mol)
+    hba = Descriptors.NumHAcceptors(mol)
+    tpsa = Descriptors.TPSA(mol)
+    rot_bonds = Descriptors.NumRotatableBonds(mol)
+    qed = Descriptors.qed(mol)
+
+    # ── Lipinski Rule of Five ──
+    lipinski_rules = [
+        {"rule": "MW ≤ 500", "value": round(mw, 1), "threshold": 500, "passed": mw <= 500, "unit": "Da"},
+        {"rule": "LogP ≤ 5", "value": round(logp, 2), "threshold": 5, "passed": logp <= 5, "unit": ""},
+        {"rule": "HBD ≤ 5", "value": hbd, "threshold": 5, "passed": hbd <= 5, "unit": ""},
+        {"rule": "HBA ≤ 10", "value": hba, "threshold": 10, "passed": hba <= 10, "unit": ""},
+    ]
+    lipinski_violations = sum(1 for r in lipinski_rules if not r["passed"])
+
+    # ── Veber Rules (oral bioavailability predictor) ──
+    veber_rules = [
+        {"rule": "Rotatable Bonds ≤ 10", "value": rot_bonds, "threshold": 10, "passed": rot_bonds <= 10, "unit": ""},
+        {"rule": "TPSA ≤ 140 Å²", "value": round(tpsa, 1), "threshold": 140, "passed": tpsa <= 140, "unit": "Å²"},
+    ]
+    veber_violations = sum(1 for r in veber_rules if not r["passed"])
+
+    # ── PAINS Filter ──
+    pains_matches = _pains_catalog.GetMatches(mol)
+    pains_alerts = []
+    for match in pains_matches:
+        pains_alerts.append(match.GetDescription())
+    pains_passed = len(pains_alerts) == 0
+
+    # ── Scoring ──
+    # QED is 0–1; we scale it.  Penalise violations.
+    base_score = qed * 100                        # 0–100 from QED
+    lipinski_penalty = lipinski_violations * 12    # −12 per violation
+    veber_penalty = veber_violations * 8           # −8 per violation
+    pains_penalty = len(pains_alerts) * 15         # −15 per PAINS alert
+
+    raw_score = base_score - lipinski_penalty - veber_penalty - pains_penalty
+    drugability_score = round(max(0, min(100, raw_score)), 1)
+
+    # Letter grade
+    if drugability_score >= 90:
+        grade = "A+"
+    elif drugability_score >= 80:
+        grade = "A"
+    elif drugability_score >= 70:
+        grade = "B+"
+    elif drugability_score >= 60:
+        grade = "B"
+    elif drugability_score >= 50:
+        grade = "B-"
+    elif drugability_score >= 40:
+        grade = "C+"
+    elif drugability_score >= 30:
+        grade = "C"
+    elif drugability_score >= 20:
+        grade = "D"
+    else:
+        grade = "F"
+
+    return {
+        "score": drugability_score,
+        "grade": grade,
+        "qed": round(qed, 3),
+        "lipinski": {
+            "violations": lipinski_violations,
+            "rules": lipinski_rules,
+        },
+        "veber": {
+            "violations": veber_violations,
+            "rules": veber_rules,
+        },
+        "pains": {
+            "alert_count": len(pains_alerts),
+            "passed": pains_passed,
+            "alerts": pains_alerts[:5],  # cap at 5 for the UI
+        },
+    }
+
+
 if __name__ == "__main__":
     # Test with Aspirin
     smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
@@ -175,3 +278,12 @@ if __name__ == "__main__":
     print(f"  {'-'*50}")
     for k, v in props.items():
         print(f"    {k:25s} = {v}")
+
+    dl = compute_drug_likeness(smiles)
+    print(f"\n  Drug-Likeness Assessment:")
+    print(f"  {'-'*50}")
+    print(f"    Score:  {dl['score']} / 100  (Grade: {dl['grade']})")
+    print(f"    QED:    {dl['qed']}")
+    print(f"    Lipinski violations: {dl['lipinski']['violations']}")
+    print(f"    Veber violations:    {dl['veber']['violations']}")
+    print(f"    PAINS alerts:        {dl['pains']['alert_count']}")

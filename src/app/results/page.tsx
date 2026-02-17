@@ -9,7 +9,7 @@ import {
     Beaker, Shield, Droplets, FlaskConical, Activity,
     ChevronRight, Search, Download, GitCompareArrows, X, Check,
     BarChart3, Zap, Eye, Calendar, Sparkles, Share2, FileText,
-    Loader2, RefreshCw,
+    Loader2, RefreshCw, Bot,
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/lib/auth-context";
@@ -219,6 +219,35 @@ export default function ResultsIndexPage() {
     const [activeFilter, setActiveFilter] = useState<FilterType>("all");
     const [hoveredCard, setHoveredCard] = useState<string | null>(null);
     const [selectedForCompare, setSelectedForCompare] = useState<Set<string>>(new Set());
+    const [aiSummaries, setAiSummaries] = useState<Record<string, string>>({});
+    const [loadingSummary, setLoadingSummary] = useState<Record<string, boolean>>({});
+
+    const fetchAiSummary = async (sim: DisplaySimulation) => {
+        if (aiSummaries[sim.dbId] || loadingSummary[sim.dbId]) return;
+        setLoadingSummary(prev => ({ ...prev, [sim.dbId]: true }));
+        try {
+            const res = await fetch("/api/copilot/summary", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: sim.name,
+                    smiles: sim.smiles,
+                    properties: sim.properties,
+                    toxicity: sim.toxicity,
+                }),
+            });
+            const data = await res.json();
+            if (res.ok && data.summary) {
+                setAiSummaries(prev => ({ ...prev, [sim.dbId]: data.summary }));
+            } else {
+                setAiSummaries(prev => ({ ...prev, [sim.dbId]: "Unable to generate AI analysis." }));
+            }
+        } catch {
+            setAiSummaries(prev => ({ ...prev, [sim.dbId]: "Failed to connect to AI service." }));
+        } finally {
+            setLoadingSummary(prev => ({ ...prev, [sim.dbId]: false }));
+        }
+    };
 
     const toggleCompare = (dbId: string) => {
         setSelectedForCompare(prev => {
@@ -509,6 +538,7 @@ export default function ResultsIndexPage() {
                                         boxShadow: isHovered ? "0 0 30px rgba(59,130,246,0.1)" : "none",
                                     }}
                                 >
+                                    <div style={{ display: "flex", flexDirection: "column" }}>
                                     <div style={{ display: "grid", gridTemplateColumns: "340px 1fr 280px", minHeight: 0 }}>
                                         {/* Left — Molecule Info + 3D */}
                                         <div style={{
@@ -750,6 +780,66 @@ export default function ResultsIndexPage() {
                                                 );
                                             })()}
                                         </div>
+                                    </div>
+
+                                    {/* ─── AI Copilot Summary ─── */}
+                                    <div style={{
+                                        borderTop: "1px solid var(--glass-border)",
+                                        padding: "14px 24px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 14,
+                                        minHeight: 56,
+                                    }}>
+                                        <div style={{
+                                            width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                                            background: "linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.15))",
+                                            border: "1px solid rgba(139,92,246,0.2)",
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                        }}>
+                                            <Bot size={15} style={{ color: "var(--accent-purple)" }} />
+                                        </div>
+
+                                        {aiSummaries[sim.dbId] ? (
+                                            <p style={{
+                                                flex: 1, fontSize: "0.78rem", lineHeight: 1.6,
+                                                color: "var(--text-secondary)", margin: 0,
+                                            }}>
+                                                {aiSummaries[sim.dbId]}
+                                            </p>
+                                        ) : loadingSummary[sim.dbId] ? (
+                                            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                                                <motion.div
+                                                    animate={{ rotate: 360 }}
+                                                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                                >
+                                                    <Loader2 size={14} style={{ color: "var(--accent-purple)" }} />
+                                                </motion.div>
+                                                <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                                                    Generating AI analysis...
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <motion.button
+                                                whileHover={{ scale: 1.02 }}
+                                                whileTap={{ scale: 0.98 }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    haptic("light");
+                                                    fetchAiSummary(sim);
+                                                }}
+                                                style={{
+                                                    flex: 1, display: "flex", alignItems: "center", gap: 8,
+                                                    background: "transparent", border: "none", cursor: "pointer",
+                                                    color: "var(--accent-purple)", fontSize: "0.78rem", fontWeight: 600,
+                                                    padding: 0, textAlign: "left",
+                                                }}
+                                            >
+                                                <Sparkles size={13} />
+                                                Generate AI Insight
+                                            </motion.button>
+                                        )}
+                                    </div>
                                     </div>
                                 </GlassCard>
                             </motion.div>

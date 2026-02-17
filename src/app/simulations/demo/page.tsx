@@ -12,6 +12,7 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
 import MoleculeViewer3D from "@/components/molecule-viewer-3d";
+import DrugLikenessGauge from "@/components/drug-likeness-gauge";
 import {
     RadarPropertyChart, PropertyBarChart,
     ToxicityGauges, SolubilityCurve,
@@ -101,6 +102,8 @@ export default function SimulationDemoPage() {
     const [activeChart, setActiveChart] = useState<"radar" | "bar" | "gauges" | "solubility">("radar");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [mlResults, setMlResults] = useState<any>(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [drugLikenessData, setDrugLikenessData] = useState<any>(null);
 
     const selectedCount = Object.values(properties).filter(Boolean).length;
     const estimatedCost = selectedCount * 5;
@@ -137,6 +140,11 @@ export default function SimulationDemoPage() {
             if (res.ok) {
                 const data = await res.json();
                 setMlResults(data);
+
+                // Store drug-likeness data from ML response
+                if (data.drug_likeness) {
+                    setDrugLikenessData(data.drug_likeness);
+                }
 
                 // Save to Supabase for the Results page
                 const runtimeMs = Date.now() - startTime;
@@ -326,6 +334,13 @@ export default function SimulationDemoPage() {
                                 <MoleculeViewer3D smiles="CC(=O)Oc1ccccc1C(=O)O" />
                             </div>
                         </GlassCard>
+
+                        {/* Drug-Likeness Gauge */}
+                        {drugLikenessData && (
+                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                                <DrugLikenessGauge data={drugLikenessData} />
+                            </motion.div>
+                        )}
 
                         {/* Plotly Charts */}
                         <GlassCard padding="16px">

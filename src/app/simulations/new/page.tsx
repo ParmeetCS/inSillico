@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
 import MoleculeViewer3D from "@/components/molecule-viewer-3d";
+import DrugLikenessGauge from "@/components/drug-likeness-gauge";
 import {
     RadarPropertyChart, PropertyBarChart,
     ToxicityGauges, SolubilityCurve,
@@ -127,6 +128,8 @@ function SimulationSetupInner() {
     const [simulationResults, setSimulationResults] = useState<any>(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [resultsMeta, setResultsMeta] = useState<any>(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [drugLikenessData, setDrugLikenessData] = useState<any>(null);
 
     const selectedCount = Object.values(properties).filter(Boolean).length;
     const selectedProps = Object.entries(properties).filter(([, v]) => v).map(([k]) => k);
@@ -211,6 +214,11 @@ function SimulationSetupInner() {
             };
 
             setSimulationResults(results);
+
+            // Store drug-likeness data from ML response
+            if (mlData.drug_likeness) {
+                setDrugLikenessData(mlData.drug_likeness);
+            }
 
             const runtimeMs = Date.now() - startTime;
             const confidence = mlData.confidence || 94.8;
@@ -430,6 +438,13 @@ function SimulationSetupInner() {
                                 <MoleculeViewer3D smiles={molecule?.smiles} />
                             </div>
                         </GlassCard>
+
+                        {/* Drug-Likeness Gauge */}
+                        {drugLikenessData && (
+                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                                <DrugLikenessGauge data={drugLikenessData} />
+                            </motion.div>
+                        )}
 
                         {/* Plotly Charts */}
                         <GlassCard padding="16px">
