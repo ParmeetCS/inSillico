@@ -421,7 +421,7 @@ inSillico/
 | `npm run ml` | Python ML server only (port 5001) |
 | `npm run build` | Production build |
 | `npm run start` | Start production server |
-| `npm run lint` | Run ESLint |
+| `npm run lint` | Run ESLint | 
 
 ---
 
