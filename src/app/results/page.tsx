@@ -484,14 +484,15 @@ export default function ResultsIndexPage() {
                     >
                         <RefreshCw size={14} /> Refresh
                     </motion.button>
-                    <Link
-                        href="/results/export"
+                    <motion.button
                         className="btn-primary"
-                        onClick={() => haptic("light")}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => { haptic("light"); toast("Select a molecule card below, then click its Export or Share button", "info"); }}
                         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", padding: "8px 18px" }}
                     >
                         <FileText size={14} /> Export &amp; Share
-                    </Link>
+                    </motion.button>
                     <motion.button
                         className="btn-secondary"
                         whileHover={{ scale: 1.02 }}
@@ -837,39 +838,58 @@ export default function ResultsIndexPage() {
                                             </div>
 
                                             {/* Action Buttons */}
-                                            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                                                <Link
-                                                    href={`/simulations/demo`}
-                                                    className="btn-primary"
-                                                    style={{
-                                                        flex: 1, justifyContent: "center", padding: "8px 14px",
-                                                        fontSize: "0.78rem", borderRadius: 10,
-                                                    }}
-                                                    onClick={() => haptic("light")}
-                                                >
-                                                    <Eye size={14} /> View Details
-                                                </Link>
-                                                <Link
-                                                    href="/results/export"
-                                                    className="btn-secondary"
-                                                    onClick={() => haptic("light")}
-                                                    style={{
-                                                        padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10,
-                                                    }}
-                                                >
-                                                    <Share2 size={14} />
-                                                </Link>
-                                                <Link
-                                                    href="/results/export"
-                                                    className="btn-secondary"
-                                                    onClick={() => haptic("light")}
-                                                    style={{
-                                                        padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10,
-                                                    }}
-                                                >
-                                                    <Download size={14} />
-                                                </Link>
-                                            </div>
+                                            {(() => {
+                                                const molQuery = new URLSearchParams({
+                                                    molId: sim.id,
+                                                    molName: sim.name,
+                                                    molSmiles: sim.smiles,
+                                                    molFormula: sim.formula,
+                                                    molMw: String(sim.mw),
+                                                    molConfidence: String(sim.confidence),
+                                                    molRuntime: sim.runtime,
+                                                    molDate: sim.date,
+                                                    molSource: sim.source,
+                                                    molProps: JSON.stringify(sim.properties),
+                                                    molTox: JSON.stringify(sim.toxicity),
+                                                }).toString();
+                                                const detailHref = `/results/view?${molQuery}`;
+                                                const exportHref = `/results/export?${molQuery}`;
+                                                return (
+                                                    <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                                                        <Link
+                                                            href={detailHref}
+                                                            className="btn-primary"
+                                                            style={{
+                                                                flex: 1, justifyContent: "center", padding: "8px 14px",
+                                                                fontSize: "0.78rem", borderRadius: 10,
+                                                            }}
+                                                            onClick={() => haptic("light")}
+                                                        >
+                                                            <Eye size={14} /> View Details
+                                                        </Link>
+                                                        <Link
+                                                            href={exportHref}
+                                                            className="btn-secondary"
+                                                            onClick={() => haptic("light")}
+                                                            style={{
+                                                                padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10,
+                                                            }}
+                                                        >
+                                                            <Share2 size={14} />
+                                                        </Link>
+                                                        <Link
+                                                            href={exportHref}
+                                                            className="btn-secondary"
+                                                            onClick={() => haptic("light")}
+                                                            style={{
+                                                                padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10,
+                                                            }}
+                                                        >
+                                                            <Download size={14} />
+                                                        </Link>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 </GlassCard>

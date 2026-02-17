@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -19,48 +20,19 @@ import {
     type ReportData,
 } from "@/lib/generate-pdf-report";
 
-/* ─── Hardcoded Demo Data (Aspirin) ─── */
-const DEMO_REPORT_DATA: ReportData = {
-    simulationId: "SIM-4821",
-    date: "2026-02-17",
-    molecule: {
-        name: "Aspirin",
-        formula: "C₉H₈O₄",
-        smiles: "CC(=O)OC1=CC=CC=C1C(=O)O",
-        mw: 180.16,
-        iupac: "2-Acetoxybenzoic acid",
-        cas: "50-78-2",
-        drugBank: "DB00945",
-    },
-    properties: [
-        { label: "LogP", value: 1.43, status: "optimal", description: "Ideal for membrane permeability" },
-        { label: "pKa (acidic)", value: 3.49, status: "moderate", description: "Weak acid — mostly ionized at pH 7.4" },
-        { label: "Solubility", value: 4.6, unit: "mg/mL", status: "moderate", description: "Moderate aqueous solubility" },
-        { label: "TPSA", value: 63.6, unit: "Å²", status: "optimal", description: "Good oral absorption expected" },
-        { label: "Bioavailability", value: 68, unit: "%", status: "optimal", description: "Well-absorbed orally" },
-        { label: "Toxicity Risk", value: "Low", status: "optimal", description: "Favorable safety profile" },
-    ],
-    toxicity: [
-        { label: "hERG Inhibition", value: 18, risk: "Low" },
-        { label: "Ames Mutagenicity", value: 12, risk: "Low" },
-        { label: "Hepatotoxicity", value: 25, risk: "Low" },
-    ],
-    conditions: {
-        temperature: "298.15 K",
-        pressure: "1.0 atm",
-        solvent: "Water (TIP3P)",
-        computeCost: "30 credits",
-        runtime: "~42 seconds",
-        confidence: "94.8%",
-    },
-    includeSections: {
-        moleculeInfo: true,
-        properties: true,
-        toxicity: true,
-        solubilityCurve: true,
-        rawMetadata: true,
-    },
-};
+/* ─── Types ─── */
+interface PropertyData {
+    value: string | number;
+    unit?: string;
+    status: "optimal" | "moderate" | "poor";
+    description?: string;
+}
+
+interface ToxData {
+    herg: number;
+    ames: number;
+    hepato: number;
+}
 
 type FormatType = "pdf" | "csv";
 
@@ -68,6 +40,24 @@ const STATUS_COLORS = {
     optimal: { bg: "rgba(34,197,94,0.1)", border: "rgba(34,197,94,0.3)", text: "#22c55e" },
     moderate: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", text: "#f59e0b" },
     poor: { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.3)", text: "#ef4444" },
+};
+
+const LABEL_MAP: Record<string, string> = {
+    logP: "LogP",
+    pKa: "pKa (acidic)",
+    solubility: "Solubility",
+    tpsa: "TPSA",
+    bioavailability: "Bioavailability",
+    toxicity: "Toxicity Risk",
+};
+
+const DESC_MAP: Record<string, Record<string, string>> = {
+    logP: { optimal: "Ideal for membrane permeability", moderate: "Acceptable lipophilicity", poor: "May have issues" },
+    pKa: { optimal: "Well-balanced ionization", moderate: "Context-dependent ionization", poor: "May affect absorption" },
+    solubility: { optimal: "Good aqueous solubility", moderate: "Moderate aqueous solubility", poor: "Poor solubility" },
+    tpsa: { optimal: "Good oral absorption expected", moderate: "Borderline surface area", poor: "Poor permeability" },
+    bioavailability: { optimal: "Well-absorbed orally", moderate: "Moderate absorption", poor: "Poor bioavailability" },
+    toxicity: { optimal: "Favorable safety profile", moderate: "Monitor for toxicity", poor: "Significant risk" },
 };
 
 function ToxBarMini({ label, value }: { label: string; value: number }) {
@@ -83,7 +73,72 @@ function ToxBarMini({ label, value }: { label: string; value: number }) {
     );
 }
 
-export default function ExportSharePage() {
+function ExportShareContent() {
+    const searchParams = useSearchParams();
+
+    /* ─── Read molecule data from query params ─── */
+    const molId = searchParams.get("molId") || "SIM-0000";
+    const molName = searchParams.get("molName") || "Unknown";
+    const molSmiles = searchParams.get("molSmiles") || "—";
+    const molFormula = searchParams.get("molFormula") || "";
+    const molMw = parseFloat(searchParams.get("molMw") || "0");
+    const molConfidence = parseFloat(searchParams.get("molConfidence") || "0");
+    const molRuntime = searchParams.get("molRuntime") || "—";
+    const molDate = searchParams.get("molDate") || new Date().toISOString().split("T")[0];
+
+    let properties: Record<string, PropertyData> = {};
+    try {
+        properties = JSON.parse(searchParams.get("molProps") || "{}");
+    } catch { /* empty */ }
+
+    let toxicity: ToxData = { herg: 0, ames: 0, hepato: 0 };
+    try {
+        toxicity = JSON.parse(searchParams.get("molTox") || "{}");
+    } catch { /* empty */ }
+
+    /* ─── Build ReportData from the molecule ─── */
+    const reportProperties = Object.entries(properties).map(([key, prop]) => ({
+        label: LABEL_MAP[key] || key,
+        value: prop.value,
+        unit: prop.unit || "",
+        status: prop.status,
+        description: DESC_MAP[key]?.[prop.status] || "",
+    }));
+
+    const reportToxicity = [
+        { label: "hERG Inhibition", value: toxicity.herg, risk: toxicity.herg < 30 ? "Low" : toxicity.herg < 60 ? "Moderate" : "High" },
+        { label: "Ames Mutagenicity", value: toxicity.ames, risk: toxicity.ames < 30 ? "Low" : toxicity.ames < 60 ? "Moderate" : "High" },
+        { label: "Hepatotoxicity", value: toxicity.hepato, risk: toxicity.hepato < 30 ? "Low" : toxicity.hepato < 60 ? "Moderate" : "High" },
+    ];
+
+    const REPORT_DATA: ReportData = {
+        simulationId: molId,
+        date: molDate,
+        molecule: {
+            name: molName,
+            formula: molFormula,
+            smiles: molSmiles,
+            mw: molMw,
+        },
+        properties: reportProperties,
+        toxicity: reportToxicity,
+        conditions: {
+            temperature: "298.15 K",
+            pressure: "1.0 atm",
+            solvent: "Water (TIP3P)",
+            computeCost: "30 credits",
+            runtime: molRuntime,
+            confidence: `${molConfidence}%`,
+        },
+        includeSections: {
+            moleculeInfo: true,
+            properties: true,
+            toxicity: true,
+            solubilityCurve: true,
+            rawMetadata: true,
+        },
+    };
+
     const [format, setFormat] = useState<FormatType>("pdf");
     const [sections, setSections] = useState({
         moleculeInfo: true,
@@ -93,7 +148,7 @@ export default function ExportSharePage() {
         rawMetadata: false,
     });
     const [isGenerating, setIsGenerating] = useState(false);
-    const [shareLink] = useState("https://platform.insilico-formulate.com/s/x92-alpha-7/res...");
+    const [shareLink] = useState(`https://platform.insilico-formulate.com/s/${molId}/results`);
     const [emailInput, setEmailInput] = useState("");
     const [linkExpiry] = useState("7 days");
     const [copied, setCopied] = useState(false);
@@ -108,11 +163,10 @@ export default function ExportSharePage() {
         haptic("heavy");
         setIsGenerating(true);
 
-        // Small delay for animation effect
         await new Promise(r => setTimeout(r, 800));
 
         const reportData: ReportData = {
-            ...DEMO_REPORT_DATA,
+            ...REPORT_DATA,
             includeSections: sections,
         };
 
@@ -157,6 +211,8 @@ export default function ExportSharePage() {
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 8 }}>
                 <Link href="/results" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Results</Link>
                 <ChevronRight size={12} />
+                <span style={{ color: "var(--text-secondary)" }}>{molName}</span>
+                <ChevronRight size={12} />
                 <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>Export & Share</span>
             </div>
 
@@ -167,7 +223,7 @@ export default function ExportSharePage() {
                         Export & Share
                     </h1>
                     <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>
-                        {DEMO_REPORT_DATA.molecule.name} — {DEMO_REPORT_DATA.molecule.formula} · Simulation {DEMO_REPORT_DATA.simulationId}
+                        {molName} — {molFormula} · Simulation {molId}
                     </p>
                 </div>
                 <span style={{
@@ -243,7 +299,7 @@ export default function ExportSharePage() {
                             </div>
                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                                 {[
-                                    { key: "moleculeInfo" as const, label: "Molecule Information", desc: "Compound name, formula, SMILES, CAS number", icon: Atom },
+                                    { key: "moleculeInfo" as const, label: "Molecule Information", desc: `${molName}, ${molFormula}, SMILES`, icon: Atom },
                                     { key: "properties" as const, label: "Physicochemical Properties", desc: "LogP, pKa, TPSA, solubility, bioavailability", icon: BarChart3 },
                                     { key: "toxicity" as const, label: "Toxicity Screening", desc: "hERG, Ames mutagenicity, hepatotoxicity risk", icon: Shield },
                                     { key: "solubilityCurve" as const, label: "Solubility Curves", desc: "pH-dependent solubility profiles", icon: Activity },
@@ -263,7 +319,6 @@ export default function ExportSharePage() {
                                                 transition: "all 0.2s",
                                             }}
                                         >
-                                            {/* Checkbox */}
                                             <div style={{
                                                 width: 22, height: 22, borderRadius: 6, flexShrink: 0,
                                                 border: `2px solid ${checked ? "#3b82f6" : "#475569"}`,
@@ -356,9 +411,7 @@ export default function ExportSharePage() {
                             <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.04em", marginBottom: 8 }}>
                                 SHARE VIA SECURE LINK
                             </div>
-                            <div style={{
-                                display: "flex", gap: 8, alignItems: "center",
-                            }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 <div style={{
                                     flex: 1, display: "flex", alignItems: "center", gap: 8,
                                     padding: "10px 14px", borderRadius: 10,
@@ -476,7 +529,7 @@ export default function ExportSharePage() {
                             </div>
                             <div>
                                 <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
-                                    {DEMO_REPORT_DATA.molecule.name} Report
+                                    {molName} Report
                                 </div>
                                 <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", letterSpacing: "0.06em" }}>
                                     CONFIDENTIAL · INTERNAL USE
@@ -505,9 +558,9 @@ export default function ExportSharePage() {
                                                 border: "1px solid rgba(255,255,255,0.06)",
                                             }}>
                                                 <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 4 }}>
-                                                    COMPOUNDS
+                                                    COMPOUND
                                                 </div>
-                                                <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>1</div>
+                                                <div style={{ fontSize: "1rem", fontWeight: 700 }}>{molName}</div>
                                             </div>
                                             <div style={{
                                                 padding: "12px 14px", borderRadius: 10,
@@ -515,10 +568,10 @@ export default function ExportSharePage() {
                                                 border: "1px solid rgba(255,255,255,0.06)",
                                             }}>
                                                 <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 4 }}>
-                                                    AVG. CONFIDENCE
+                                                    CONFIDENCE
                                                 </div>
-                                                <div style={{ fontSize: "1.2rem", fontWeight: 700, color: "#22c55e" }}>
-                                                    {DEMO_REPORT_DATA.conditions.confidence}
+                                                <div style={{ fontSize: "1rem", fontWeight: 700, color: "#22c55e" }}>
+                                                    {molConfidence}%
                                                 </div>
                                             </div>
                                         </div>
@@ -544,9 +597,9 @@ export default function ExportSharePage() {
                                                 TOXICITY SCREENING
                                             </div>
                                             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                                                {DEMO_REPORT_DATA.toxicity.map(t => (
-                                                    <ToxBarMini key={t.label} label={t.label.split(" ")[0]} value={t.value} />
-                                                ))}
+                                                <ToxBarMini label="hERG" value={toxicity.herg} />
+                                                <ToxBarMini label="Ames" value={toxicity.ames} />
+                                                <ToxBarMini label="Hepato" value={toxicity.hepato} />
                                             </div>
                                         </div>
                                     </motion.div>
@@ -554,44 +607,6 @@ export default function ExportSharePage() {
                             </AnimatePresence>
 
                             {/* Properties Mini Distribution */}
-                            <AnimatePresence>
-                                {sections.properties && (
-                                    <motion.div
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: "auto" }}
-                                        exit={{ opacity: 0, height: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                    >
-                                        <div style={{
-                                            padding: "10px 14px", borderRadius: 10,
-                                            background: "rgba(255,255,255,0.02)",
-                                            border: "1px solid rgba(255,255,255,0.06)",
-                                        }}>
-                                            <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 8 }}>
-                                                DISTRIBUTION ANALYSIS
-                                            </div>
-                                            {/* Mini bars for properties */}
-                                            <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 50, marginBottom: 4 }}>
-                                                {[42, 68, 35, 85, 60, 78, 45, 92, 55, 70, 48, 88].map((h, i) => (
-                                                    <motion.div
-                                                        key={i}
-                                                        initial={{ height: 0 }}
-                                                        animate={{ height: `${h}%` }}
-                                                        transition={{ delay: i * 0.05, duration: 0.4 }}
-                                                        style={{
-                                                            flex: 1, borderRadius: "2px 2px 0 0",
-                                                            background: `linear-gradient(180deg, ${i % 3 === 0 ? "#3b82f6" : i % 3 === 1 ? "#8b5cf6" : "#06b6d4"}, transparent)`,
-                                                            opacity: 0.7,
-                                                        }}
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-
-                            {/* Molecular Data Table Preview */}
                             <AnimatePresence>
                                 {sections.properties && (
                                     <motion.div
@@ -617,7 +632,7 @@ export default function ExportSharePage() {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {DEMO_REPORT_DATA.properties.slice(0, 4).map((p, i) => {
+                                                    {reportProperties.slice(0, 4).map((p, i) => {
                                                         const sc = STATUS_COLORS[p.status];
                                                         return (
                                                             <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
@@ -661,7 +676,11 @@ export default function ExportSharePage() {
                                             <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 6 }}>
                                                 RUN METADATA
                                             </div>
-                                            {Object.entries(DEMO_REPORT_DATA.conditions).slice(0, 3).map(([k, v]) => (
+                                            {[
+                                                ["Simulation", molId],
+                                                ["Confidence", `${molConfidence}%`],
+                                                ["Runtime", molRuntime],
+                                            ].map(([k, v]) => (
                                                 <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: "0.6rem" }}>
                                                     <span style={{ color: "var(--text-muted)", textTransform: "capitalize" }}>{k}</span>
                                                     <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>{v}</span>
@@ -680,7 +699,7 @@ export default function ExportSharePage() {
                             display: "flex", justifyContent: "space-between", alignItems: "center",
                         }}>
                             <span style={{ fontSize: "0.6rem", color: "var(--text-muted)" }}>
-                                Generated by InSilico Formulator · {DEMO_REPORT_DATA.date}
+                                Generated by InSilico Formulator · {molDate}
                             </span>
                             <span style={{ fontSize: "0.6rem", color: "var(--accent-blue)" }}>
                                 Page 1 of 1
@@ -710,8 +729,8 @@ export default function ExportSharePage() {
                                 </div>
                                 <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
                                     {format === "pdf"
-                                        ? "Branded, publication-ready report with properties table, toxicity bars, metadata, and executive summary"
-                                        : "Raw data in comma-separated format, compatible with Excel, Google Sheets, and data analysis tools"
+                                        ? `Branded report for ${molName} with properties, toxicity, and metadata`
+                                        : `Raw data for ${molName} in CSV format, compatible with Excel and analysis tools`
                                     }
                                 </div>
                             </div>
@@ -749,5 +768,20 @@ export default function ExportSharePage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function ExportSharePage() {
+    return (
+        <Suspense fallback={
+            <div className="page-container">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 24 }}>
+                    <GlassCard><div style={{ height: 300 }} /></GlassCard>
+                    <GlassCard><div style={{ height: 300 }} /></GlassCard>
+                </div>
+            </div>
+        }>
+            <ExportShareContent />
+        </Suspense>
     );
 }
