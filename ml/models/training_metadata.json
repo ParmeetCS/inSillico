@@ -1,0 +1,108 @@
+{
+  "trained_at": "2026-02-17 13:19:00",
+  "datasets": {
+    "solubility": "Aqueous Solubility (logS) \u2014 ESOL Dataset",
+    "logp": "Lipophilicity (logD) \u2014 MoleculeNet",
+    "bbbp": "Blood-Brain Barrier Penetration \u2014 BBBP",
+    "toxicity": "Clinical Trial Toxicity \u2014 ClinTox"
+  },
+  "models": [
+    "xgboost",
+    "decision_tree"
+  ],
+  "feature_names": [
+    "molecular_weight",
+    "heavy_atom_count",
+    "c_count",
+    "n_count",
+    "o_count",
+    "s_count",
+    "halogen_count",
+    "hbd",
+    "hba",
+    "rotatable_bonds",
+    "n_rings",
+    "n_aromatic_rings",
+    "tpsa",
+    "sp3_fraction",
+    "n_o_ratio",
+    "mw_per_heavy_atom",
+    "logp_estimate",
+    "n_hydroxyl",
+    "n_carboxyl",
+    "n_amine",
+    "n_carbonyl",
+    "n_ether",
+    "n_ester",
+    "n_amide",
+    "smiles_length",
+    "branch_count",
+    "charge_count"
+  ],
+  "results": {
+    "solubility": {
+      "xgboost": {
+        "rmse": 0.7294,
+        "mae": 0.4851,
+        "r2": 0.8874,
+        "cv_r2_mean": 0.9031,
+        "cv_r2_std": 0.0099
+      },
+      "decision_tree": {
+        "rmse": 0.8669,
+        "mae": 0.6088,
+        "r2": 0.841,
+        "cv_r2_mean": 0.8257,
+        "cv_r2_std": 0.0326
+      }
+    },
+    "logp": {
+      "xgboost": {
+        "rmse": 0.7356,
+        "mae": 0.5564,
+        "r2": 0.6337,
+        "cv_r2_mean": 0.6312,
+        "cv_r2_std": 0.0389
+      },
+      "decision_tree": {
+        "rmse": 0.9053,
+        "mae": 0.678,
+        "r2": 0.4453,
+        "cv_r2_mean": 0.4039,
+        "cv_r2_std": 0.063
+      }
+    },
+    "bbbp": {
+      "xgboost": {
+        "accuracy": 0.902,
+        "f1": 0.9359,
+        "auc": 0.9483,
+        "cv_acc_mean": 0.8841,
+        "cv_acc_std": 0.0159
+      },
+      "decision_tree": {
+        "accuracy": 0.8333,
+        "f1": 0.8859,
+        "auc": 0.8482,
+        "cv_acc_mean": 0.7842,
+        "cv_acc_std": 0.0119
+      }
+    },
+    "toxicity": {
+      "xgboost": {
+        "accuracy": 0.9223,
+        "f1": 0.5106,
+        "auc": 0.9467,
+        "cv_acc_mean": 0.9096,
+        "cv_acc_std": 0.0152
+      },
+      "decision_tree": {
+        "accuracy": 0.8851,
+        "f1": 0.5143,
+        "auc": 0.8621,
+        "cv_acc_mean": 0.864,
+        "cv_acc_std": 0.0429
+      }
+    }
+  }
+}

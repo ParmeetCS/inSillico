@@ -127,6 +127,14 @@ function SimulationSetupInner() {
                 <motion.button className="btn-primary" whileTap={{ scale: 0.97 }} onClick={() => router.push("/molecules/new")}>
                     Define Molecule
                 </motion.button>
+                <motion.button
+                    className="btn-secondary"
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => router.push("/simulations/demo")}
+                    style={{ marginTop: 12 }}
+                >
+                    🧪 Try Demo (Aspirin)
+                </motion.button>
             </div>
         );
     }

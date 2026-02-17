@@ -12,6 +12,8 @@
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.3",
     "framer-motion": "^12.34.0",
+    "jspdf": "^4.1.0",
+    "jspdf-autotable": "^5.0.7",
     "ketcher-react": "^3.12.0-dev.1",
     "ketcher-standalone": "^3.12.0-dev.1",
     "lucide-react": "^0.564.0",
