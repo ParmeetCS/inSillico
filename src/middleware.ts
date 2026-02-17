@@ -22,10 +22,27 @@ export async function middleware(request: NextRequest) {
                     );
                 },
             },
+            global: {
+                fetch: (input, init) => {
+                    return fetch(input, {
+                        ...init,
+                        signal: request.signal,
+                    });
+                },
+            },
         }
     );
 
-    await supabase.auth.getUser();
+    try {
+        await supabase.auth.getUser();
+    } catch (error) {
+        // Gracefully handle AbortError when the middleware signal is aborted
+        if (error instanceof DOMException && error.name === "AbortError") {
+            return supabaseResponse;
+        }
+        // Re-throw unexpected errors
+        throw error;
+    }
 
     return supabaseResponse;
 }

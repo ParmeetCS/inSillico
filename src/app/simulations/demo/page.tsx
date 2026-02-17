@@ -125,6 +125,8 @@ export default function SimulationDemoPage() {
         setProgress(0);
         setMlResults(null);
 
+        const startTime = Date.now();
+
         // Call the ML prediction API in parallel with the progress animation
         try {
             const res = await fetch("/api/predict", {
@@ -135,6 +137,27 @@ export default function SimulationDemoPage() {
             if (res.ok) {
                 const data = await res.json();
                 setMlResults(data);
+
+                // Save to Supabase for the Results page
+                const runtimeMs = Date.now() - startTime;
+                try {
+                    await fetch("/api/predict/save", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            smiles: ASPIRIN.smiles,
+                            molecule_name: data.molecule?.name || ASPIRIN.name,
+                            formula: data.molecule?.formula || ASPIRIN.formula,
+                            molecular_weight: data.molecule?.molecular_weight || ASPIRIN.mw,
+                            properties: data.properties,
+                            toxicity_screening: data.toxicity_screening || null,
+                            confidence: data.confidence || 94.8,
+                            runtime_ms: runtimeMs,
+                        }),
+                    });
+                } catch {
+                    console.warn("Failed to save prediction — results still shown");
+                }
             }
         } catch {
             // ML server might not be running — use fallback
