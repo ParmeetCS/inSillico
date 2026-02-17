@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     Atom, CheckCircle2, Cpu, AlertTriangle, TrendingUp,
     Beaker, Shield, Droplets, FlaskConical, Activity,
-    ChevronRight, Search, Download,
+    ChevronRight, Search, Download, GitCompareArrows, X, Check,
     BarChart3, Zap, Eye, Calendar, Sparkles, Share2, FileText,
     Loader2, RefreshCw,
 } from "lucide-react";
@@ -218,6 +218,41 @@ export default function ResultsIndexPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [activeFilter, setActiveFilter] = useState<FilterType>("all");
     const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+    const [selectedForCompare, setSelectedForCompare] = useState<Set<string>>(new Set());
+
+    const toggleCompare = (dbId: string) => {
+        setSelectedForCompare(prev => {
+            const next = new Set(prev);
+            if (next.has(dbId)) {
+                next.delete(dbId);
+            } else {
+                if (next.size >= 3) {
+                    toast("Maximum 3 compounds for comparison", "error");
+                    return prev;
+                }
+                next.add(dbId);
+            }
+            return next;
+        });
+        haptic("selection");
+    };
+
+    const buildCompareUrl = () => {
+        const selected = simulations.filter(s => selectedForCompare.has(s.dbId));
+        const params = new URLSearchParams();
+        selected.forEach((s, i) => {
+            params.set(`c${i}_name`, s.name);
+            params.set(`c${i}_smiles`, s.smiles);
+            params.set(`c${i}_formula`, s.formula);
+            params.set(`c${i}_mw`, String(s.mw));
+            params.set(`c${i}_confidence`, String(s.confidence));
+            params.set(`c${i}_runtime`, s.runtime);
+            params.set(`c${i}_date`, s.date);
+            params.set(`c${i}_props`, JSON.stringify(s.properties));
+            params.set(`c${i}_tox`, JSON.stringify(s.toxicity));
+        });
+        return `/results/compare?${params.toString()}`;
+    };
 
     const fetchResults = useCallback(async () => {
         if (!user) return;
@@ -321,11 +356,10 @@ export default function ResultsIndexPage() {
                     >
                         <RefreshCw size={14} /> Refresh
                     </motion.button>
-                    <motion.button
+                    <Link
+                        href="/results/export"
                         className="btn-primary"
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => { haptic("light"); toast("Select a molecule card below, then click its Export or Share button", "info"); }}
+                        onClick={() => haptic("light")}
                         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", padding: "8px 18px" }}
                     >
                         <FileText size={14} /> Export &amp; Share
@@ -481,9 +515,33 @@ export default function ResultsIndexPage() {
                                             padding: "20px 24px", borderRight: "1px solid var(--glass-border)",
                                             display: "flex", flexDirection: "column", gap: 14,
                                         }}>
-                                            {/* 3D Viewer */}
+                                            {/* 3D Viewer + Compare checkbox */}
                                             <div style={{ height: 180, borderRadius: 10, overflow: "hidden", background: "rgba(0,0,0,0.2)", border: "1px solid var(--glass-border)", position: "relative" }}>
                                                 <MoleculeViewer3D smiles={sim.smiles || undefined} height="180px" spinning={false} compact />
+                                                {/* Compare checkbox */}
+                                                <motion.div
+                                                    whileHover={{ scale: 1.1 }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={(e) => { e.stopPropagation(); toggleCompare(sim.dbId); }}
+                                                    style={{
+                                                        position: "absolute", top: 8, right: 8, zIndex: 10,
+                                                        width: 28, height: 28, borderRadius: 8, cursor: "pointer",
+                                                        background: selectedForCompare.has(sim.dbId)
+                                                            ? "linear-gradient(135deg, #3b82f6, #8b5cf6)"
+                                                            : "rgba(0,0,0,0.5)",
+                                                        border: `2px solid ${selectedForCompare.has(sim.dbId) ? "#3b82f6" : "rgba(255,255,255,0.2)"}`,
+                                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                                        backdropFilter: "blur(8px)",
+                                                        boxShadow: selectedForCompare.has(sim.dbId) ? "0 0 12px rgba(59,130,246,0.4)" : "none",
+                                                        transition: "all 0.2s",
+                                                    }}
+                                                    title="Select for comparison"
+                                                >
+                                                    {selectedForCompare.has(sim.dbId)
+                                                        ? <Check size={14} style={{ color: "#fff" }} />
+                                                        : <GitCompareArrows size={14} style={{ color: "rgba(255,255,255,0.6)" }} />
+                                                    }
+                                                </motion.div>
                                             </div>
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                                 <div>
@@ -646,39 +704,51 @@ export default function ResultsIndexPage() {
                                             </div>
 
                                             {/* Action Buttons */}
-                                            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                                                <Link
-                                                    href={`/simulations/demo`}
-                                                    className="btn-primary"
-                                                    style={{
-                                                        flex: 1, justifyContent: "center", padding: "8px 14px",
-                                                        fontSize: "0.78rem", borderRadius: 10,
-                                                    }}
-                                                    onClick={() => haptic("light")}
-                                                >
-                                                    <Eye size={14} /> View Details
-                                                </Link>
-                                                <Link
-                                                    href="/results/export"
-                                                    className="btn-secondary"
-                                                    onClick={() => haptic("light")}
-                                                    style={{
-                                                        padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10,
-                                                    }}
-                                                >
-                                                    <Share2 size={14} />
-                                                </Link>
-                                                <Link
-                                                    href="/results/export"
-                                                    className="btn-secondary"
-                                                    onClick={() => haptic("light")}
-                                                    style={{
-                                                        padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10,
-                                                    }}
-                                                >
-                                                    <Download size={14} />
-                                                </Link>
-                                            </div>
+                                            {(() => {
+                                                const q = new URLSearchParams({
+                                                    id: sim.dbId,
+                                                    name: sim.name,
+                                                    smiles: sim.smiles,
+                                                    formula: sim.formula,
+                                                    mw: String(sim.mw),
+                                                    confidence: String(sim.confidence),
+                                                    runtime: sim.runtime,
+                                                    date: sim.date,
+                                                    props: JSON.stringify(sim.properties),
+                                                    tox: JSON.stringify(sim.toxicity),
+                                                }).toString();
+                                                return (
+                                                    <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                                                        <Link
+                                                            href={`/results/view?${q}`}
+                                                            className="btn-primary"
+                                                            style={{
+                                                                flex: 1, justifyContent: "center", padding: "8px 14px",
+                                                                fontSize: "0.78rem", borderRadius: 10,
+                                                            }}
+                                                            onClick={() => haptic("light")}
+                                                        >
+                                                            <Eye size={14} /> View Details
+                                                        </Link>
+                                                        <Link
+                                                            href={`/results/export?${q}`}
+                                                            className="btn-secondary"
+                                                            onClick={() => haptic("light")}
+                                                            style={{ padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10 }}
+                                                        >
+                                                            <Share2 size={14} />
+                                                        </Link>
+                                                        <Link
+                                                            href={`/results/export?${q}`}
+                                                            className="btn-secondary"
+                                                            onClick={() => haptic("light")}
+                                                            style={{ padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10 }}
+                                                        >
+                                                            <Download size={14} />
+                                                        </Link>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 </GlassCard>
@@ -698,6 +768,80 @@ export default function ResultsIndexPage() {
                     </p>
                 </motion.div>
             )}
+
+            {/* ─── Floating Comparison Bar ─── */}
+            <AnimatePresence>
+                {selectedForCompare.size >= 2 && (
+                    <motion.div
+                        initial={{ y: 100, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: 100, opacity: 0 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        style={{
+                            position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+                            zIndex: 1000, display: "flex", alignItems: "center", gap: 16,
+                            padding: "14px 24px", borderRadius: 16,
+                            background: "rgba(15,23,42,0.92)",
+                            backdropFilter: "blur(20px) saturate(180%)",
+                            border: "1px solid rgba(59,130,246,0.3)",
+                            boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 20px rgba(59,130,246,0.15)",
+                        }}
+                    >
+                        <GitCompareArrows size={20} style={{ color: "var(--accent-blue)" }} />
+                        <div>
+                            <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                                {selectedForCompare.size} compounds selected
+                            </div>
+                            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                                {selectedForCompare.size < 2 ? "Select at least 2" : "Ready to compare"} • Max 3
+                            </div>
+                        </div>
+
+                        {/* Selected compound chips */}
+                        <div style={{ display: "flex", gap: 6 }}>
+                            {simulations.filter(s => selectedForCompare.has(s.dbId)).map((s, i) => (
+                                <div key={s.dbId} style={{
+                                    padding: "4px 10px", borderRadius: 8, fontSize: "0.72rem", fontWeight: 600,
+                                    background: `rgba(${i === 0 ? "59,130,246" : i === 1 ? "245,158,11" : "139,92,246"},0.15)`,
+                                    color: i === 0 ? "#3b82f6" : i === 1 ? "#f59e0b" : "#8b5cf6",
+                                    border: `1px solid ${i === 0 ? "rgba(59,130,246,0.3)" : i === 1 ? "rgba(245,158,11,0.3)" : "rgba(139,92,246,0.3)"}`,
+                                    display: "flex", alignItems: "center", gap: 4,
+                                }}>
+                                    {s.name}
+                                    <X size={10} style={{ cursor: "pointer", opacity: 0.7 }}
+                                        onClick={() => toggleCompare(s.dbId)} />
+                                </div>
+                            ))}
+                        </div>
+
+                        <Link
+                            href={buildCompareUrl()}
+                            className="btn-primary"
+                            onClick={() => haptic("medium")}
+                            style={{
+                                padding: "10px 20px", fontSize: "0.85rem", fontWeight: 700,
+                                borderRadius: 12, display: "flex", alignItems: "center", gap: 6,
+                                background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+                                boxShadow: "0 4px 15px rgba(59,130,246,0.3)",
+                            }}
+                        >
+                            <GitCompareArrows size={16} /> Compare Now
+                        </Link>
+
+                        <motion.button
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => { setSelectedForCompare(new Set()); haptic("light"); }}
+                            style={{
+                                background: "none", border: "none", cursor: "pointer",
+                                color: "var(--text-muted)", padding: 4,
+                            }}
+                            title="Clear selection"
+                        >
+                            <X size={18} />
+                        </motion.button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
