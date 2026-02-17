@@ -286,7 +286,7 @@ export default function SimulationDemoPage() {
                                 </div>
                             </div>
                             <div style={{ height: 300, padding: "8px 12px 12px" }}>
-                                <MoleculeViewer3D />
+                                <MoleculeViewer3D smiles="CC(=O)Oc1ccccc1C(=O)O" />
                             </div>
                         </GlassCard>
 
@@ -485,7 +485,7 @@ export default function SimulationDemoPage() {
 
                         {/* 3D Viewer */}
                         <GlassCard padding="0" style={{ overflow: "hidden", minHeight: 260 }}>
-                            <MoleculeViewer3D height="100%" />
+                            <MoleculeViewer3D smiles="CC(=O)Oc1ccccc1C(=O)O" height="100%" />
                         </GlassCard>
                     </div>
 

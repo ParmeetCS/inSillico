@@ -49,61 +49,70 @@ export default function MoleculeInputPage() {
         haptic("medium");
         setLoading(true);
 
-        try {
-            // Get fresh session token to ensure authenticated requests
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("Not authenticated. Please log in again.");
+        const timeout = <T,>(promise: Promise<T>, ms = 15000): Promise<T> =>
+            Promise.race([
+                promise,
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Request timed out — please check your connection")), ms)
+                ),
+            ]);
 
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-            const headers = {
-                "Content-Type": "application/json",
-                "apikey": supabaseKey,
-                "Authorization": `Bearer ${session.access_token}`,
-                "Prefer": "return=representation",
-            };
+        try {
+            // Refresh session first to ensure valid token
+            console.log("[save] refreshing session...");
+            const { data: { session }, error: sessErr } = await timeout(supabase.auth.getSession());
+            if (sessErr || !session) {
+                throw new Error("Session expired — please log in again.");
+            }
+            console.log("[save] session OK, uid:", session.user.id);
 
             // 1. Ensure we have a project
             let projectId: string;
-            const projRes = await fetch(
-                `${supabaseUrl}/rest/v1/projects?select=id&user_id=eq.${user.id}&limit=1`,
-                { headers }
+            console.log("[save] fetching projects...");
+            const { data: projects, error: projFetchErr } = await timeout(
+                supabase.from("projects").select("id").eq("user_id", session.user.id).limit(1)
             );
-            const projects = await projRes.json();
 
-            if (Array.isArray(projects) && projects.length > 0) {
+            if (projFetchErr) throw new Error("Failed to fetch projects: " + projFetchErr.message);
+            console.log("[save] projects found:", projects?.length);
+
+            if (projects && projects.length > 0) {
                 projectId = projects[0].id;
             } else {
-                const newProjRes = await fetch(`${supabaseUrl}/rest/v1/projects?select=id`, {
-                    method: "POST",
-                    headers: { ...headers, "Prefer": "return=representation" },
-                    body: JSON.stringify({ user_id: user.id, name: "My First Project", description: "Default project" }),
-                });
-                if (!newProjRes.ok) throw new Error("Failed to create project: " + (await newProjRes.text()));
-                const [newProject] = await newProjRes.json();
+                console.log("[save] creating default project...");
+                const { data: newProject, error: projCreateErr } = await timeout(
+                    supabase
+                        .from("projects")
+                        .insert({ user_id: session.user.id, name: "My First Project", description: "Default project" })
+                        .select("id")
+                        .single()
+                );
+                if (projCreateErr || !newProject) throw new Error("Failed to create project: " + (projCreateErr?.message ?? "Unknown error"));
                 projectId = newProject.id;
             }
+            console.log("[save] projectId:", projectId);
 
             // 2. Create the molecule
-            const molRes = await fetch(`${supabaseUrl}/rest/v1/molecules?select=id`, {
-                method: "POST",
-                headers: { ...headers, "Prefer": "return=representation" },
-                body: JSON.stringify({
-                    project_id: projectId,
-                    user_id: user.id,
-                    name: name.trim() || `Compound-${Date.now().toString(36).slice(-4).toUpperCase()}`,
-                    smiles: smiles.trim(),
-                    formula: formula.trim() || null,
-                    molecular_weight: molecularWeight ? parseFloat(molecularWeight) : null,
-                }),
-            });
+            console.log("[save] inserting molecule...");
+            const { data: molecule, error: molErr } = await timeout(
+                supabase
+                    .from("molecules")
+                    .insert({
+                        project_id: projectId,
+                        user_id: session.user.id,
+                        name: name.trim() || `Compound-${Date.now().toString(36).slice(-4).toUpperCase()}`,
+                        smiles: smiles.trim(),
+                        formula: formula.trim() || null,
+                        molecular_weight: molecularWeight ? parseFloat(molecularWeight) : null,
+                    })
+                    .select("id")
+                    .single()
+            );
 
-            if (!molRes.ok) {
-                const errText = await molRes.text();
-                throw new Error(`Molecule save failed (${molRes.status}): ${errText}`);
+            if (molErr || !molecule) {
+                throw new Error(`Molecule save failed: ${molErr?.message ?? "Unknown error"}`);
             }
-
-            const [molecule] = await molRes.json();
+            console.log("[save] molecule created:", molecule.id);
 
             haptic("success");
             toast("Molecule saved! Configure your simulation.", "success");

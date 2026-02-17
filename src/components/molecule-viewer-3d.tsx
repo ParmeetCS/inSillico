@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
-import { RotateCw, Maximize2, Camera } from "lucide-react";
+import { useRef, useEffect, useState, useCallback } from "react";
+import { RotateCw, Maximize2, Loader2, AlertCircle } from "lucide-react";
 
-/* ─── Aspirin SDF (V2000) for demo ─── */
+/* ─── Fallback Aspirin SDF (V2000) only if nothing else is provided ─── */
 const ASPIRIN_SDF = `
      RDKit          3D
 
@@ -59,7 +59,71 @@ declare global {
   }
 }
 
+/* ─── Convert SMILES → 3D SDF via external APIs ─── */
+async function smilesToSDF(smiles: string): Promise<string | null> {
+  const encoded = encodeURIComponent(smiles);
+
+  // Strategy 1: PubChem — SMILES → CID → 3D SDF
+  try {
+    const cidRes = await fetch(
+      `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encoded}/cids/JSON`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (cidRes.ok) {
+      const cidData = await cidRes.json();
+      const cid = cidData?.IdentifierList?.CID?.[0];
+      if (cid) {
+        const sdfRes = await fetch(
+          `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF?record_type=3d`,
+          { signal: AbortSignal.timeout(8000) }
+        );
+        if (sdfRes.ok) {
+          const sdf = await sdfRes.text();
+          if (sdf && sdf.includes("V2000") || sdf.includes("V3000")) {
+            console.log("[3D Viewer] Loaded 3D structure from PubChem");
+            return sdf;
+          }
+        }
+        // Fallback: 2D SDF from PubChem
+        const sdf2dRes = await fetch(
+          `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF`,
+          { signal: AbortSignal.timeout(8000) }
+        );
+        if (sdf2dRes.ok) {
+          const sdf2d = await sdf2dRes.text();
+          if (sdf2d) {
+            console.log("[3D Viewer] Loaded 2D structure from PubChem (3D unavailable)");
+            return sdf2d;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[3D Viewer] PubChem lookup failed:", e);
+  }
+
+  // Strategy 2: NCI CACTUS resolver
+  try {
+    const res = await fetch(
+      `https://cactus.nci.nih.gov/chemical/structure/${encoded}/sdf?get3d=true`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (res.ok) {
+      const sdf = await res.text();
+      if (sdf && sdf.length > 50) {
+        console.log("[3D Viewer] Loaded 3D structure from NCI CACTUS");
+        return sdf;
+      }
+    }
+  } catch (e) {
+    console.warn("[3D Viewer] NCI CACTUS lookup failed:", e);
+  }
+
+  return null;
+}
+
 interface Props {
+  smiles?: string;
   sdfData?: string;
   width?: string;
   height?: string;
@@ -67,20 +131,25 @@ interface Props {
 }
 
 export default function MoleculeViewer3D({
-  sdfData = ASPIRIN_SDF,
+  smiles,
+  sdfData,
   width = "100%",
   height = "100%",
   spinning: initialSpin = true,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
-  const [loaded, setLoaded] = useState(false);
+  const [libLoaded, setLibLoaded] = useState(false);
   const [spin, setSpin] = useState(initialSpin);
+  const [resolvedSDF, setResolvedSDF] = useState<string | null>(sdfData || null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const prevSmiles = useRef<string | undefined>(undefined);
 
   /* Load 3Dmol.js from CDN */
   useEffect(() => {
     if (window.$3Dmol) {
-      setLoaded(true);
+      setLibLoaded(true);
       return;
     }
     const jq = document.createElement("script");
@@ -88,15 +157,52 @@ export default function MoleculeViewer3D({
     jq.onload = () => {
       const s = document.createElement("script");
       s.src = "https://3dmol.org/build/3Dmol-min.js";
-      s.onload = () => setLoaded(true);
+      s.onload = () => setLibLoaded(true);
       document.head.appendChild(s);
     };
     document.head.appendChild(jq);
   }, []);
 
-  /* Initialize viewer */
+  /* Resolve SMILES to SDF when smiles prop changes */
+  const resolveSMILES = useCallback(async (smilesStr: string) => {
+    setLoading(true);
+    setError(null);
+    console.log("[3D Viewer] Resolving SMILES:", smilesStr);
+
+    const result = await smilesToSDF(smilesStr);
+    if (result) {
+      setResolvedSDF(result);
+      setError(null);
+    } else {
+      setError("Could not generate 3D structure");
+      // Use fallback aspirin only if no sdfData was explicitly provided
+      if (!sdfData) {
+        setResolvedSDF(ASPIRIN_SDF);
+      }
+    }
+    setLoading(false);
+  }, [sdfData]);
+
   useEffect(() => {
-    if (!loaded || !containerRef.current) return;
+    // If explicit sdfData is given, use it directly
+    if (sdfData) {
+      setResolvedSDF(sdfData);
+      return;
+    }
+    // If smiles changed, resolve it
+    if (smiles && smiles !== prevSmiles.current) {
+      prevSmiles.current = smiles;
+      resolveSMILES(smiles);
+    }
+    // If neither provided, use aspirin fallback
+    if (!smiles && !sdfData && !resolvedSDF) {
+      setResolvedSDF(ASPIRIN_SDF);
+    }
+  }, [smiles, sdfData, resolveSMILES, resolvedSDF]);
+
+  /* Initialize / update viewer */
+  useEffect(() => {
+    if (!libLoaded || !containerRef.current || !resolvedSDF) return;
 
     const el = containerRef.current;
     el.innerHTML = "";
@@ -106,7 +212,7 @@ export default function MoleculeViewer3D({
       antialias: true,
     });
 
-    viewer.addModel(sdfData, "sdf");
+    viewer.addModel(resolvedSDF, "sdf");
     viewer.setStyle({}, {
       stick: { radius: 0.14, colorscheme: "Jmol" },
       sphere: { scale: 0.28, colorscheme: "Jmol" },
@@ -118,7 +224,7 @@ export default function MoleculeViewer3D({
     viewerRef.current = viewer;
 
     return () => { el.innerHTML = ""; };
-  }, [loaded, sdfData, spin]);
+  }, [libLoaded, resolvedSDF, spin]);
 
   const toggleSpin = () => {
     setSpin((s) => {
@@ -134,18 +240,33 @@ export default function MoleculeViewer3D({
     viewerRef.current?.render();
   };
 
+  const isLoading = !libLoaded || loading;
+
   return (
     <div style={{ position: "relative", width, height, minHeight: 260 }}>
       {/* Loading overlay */}
-      {!loaded && (
+      {isLoading && (
         <div style={{
-          position: "absolute", inset: 0, display: "flex", alignItems: "center",
-          justifyContent: "center", background: "rgba(10,15,30,0.6)",
-          borderRadius: 12, zIndex: 2,
+          position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          background: "rgba(10,15,30,0.8)", borderRadius: 12, zIndex: 2, gap: 10,
         }}>
-          <div className="spin" style={{ color: "var(--accent-cyan)" }}>
-            <RotateCw size={24} />
-          </div>
+          <Loader2 size={28} className="spin" style={{ color: "var(--accent-cyan)" }} />
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+            {!libLoaded ? "Loading 3D engine..." : "Generating 3D structure..."}
+          </span>
+        </div>
+      )}
+
+      {/* Error badge */}
+      {error && !loading && (
+        <div style={{
+          position: "absolute", top: 10, left: 10, display: "flex", alignItems: "center",
+          gap: 6, padding: "4px 10px", borderRadius: 8,
+          background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)",
+          fontSize: "0.7rem", color: "#f59e0b", zIndex: 3,
+        }}>
+          <AlertCircle size={12} /> {error}
         </div>
       )}
 
