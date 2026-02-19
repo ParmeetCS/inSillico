@@ -63,6 +63,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("insilico-ml")
 
+# ─── Lean mode for memory-constrained deployments (Render 512MB) ───
+LEAN_MODE = os.environ.get("LEAN_MODE", "0") == "1"
+if LEAN_MODE:
+    logger.info("LEAN_MODE enabled — skipping legacy models, lazy-loading PersonaPlex")
+
 # ─── App ───
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -216,8 +221,11 @@ def load_qspr_models():
         except Exception as e:
             logger.error(f"  ✗ Failed to load QSPR models for {prop_name}: {e}")
 
-    # Load legacy models as fallback
-    _load_legacy_models()
+    # Load legacy models as fallback (skip in LEAN_MODE to save ~100MB RAM)
+    if not LEAN_MODE:
+        _load_legacy_models()
+    else:
+        logger.info("  Skipping legacy models (LEAN_MODE)")
 
     _server_ready = True
     logger.info(
@@ -1302,21 +1310,24 @@ def _initialize():
             "  python train_models.py    (Legacy v1)\n"
         )
 
-    # Initialize PersonaPlex
-    try:
-        sm = get_session_manager()
-        bridge = get_cerebras_bridge()
-        if bridge.is_configured:
-            logger.info("  ✓ Cerebras AI configured")
-        else:
-            logger.warning("  ✗ Cerebras API key not set — voice reasoning disabled")
+    # Initialize PersonaPlex (lazy in LEAN_MODE to save ~50MB startup RAM)
+    if not LEAN_MODE:
+        try:
+            sm = get_session_manager()
+            bridge = get_cerebras_bridge()
+            if bridge.is_configured:
+                logger.info("  ✓ Cerebras AI configured")
+            else:
+                logger.warning("  ✗ Cerebras API key not set — voice reasoning disabled")
 
-        asr = get_asr_client()
-        tts = get_tts_client()
-        logger.info(f"  {'✓' if asr.is_available else '✗'} Riva ASR: {'connected' if asr.is_available else 'browser fallback'}")
-        logger.info(f"  {'✓' if tts.is_available else '✗'} Riva TTS: {'connected' if tts.is_available else 'browser fallback'}")
-    except Exception as e:
-        logger.warning(f"  PersonaPlex init warning: {e}")
+            asr = get_asr_client()
+            tts = get_tts_client()
+            logger.info(f"  {'✓' if asr.is_available else '✗'} Riva ASR: {'connected' if asr.is_available else 'browser fallback'}")
+            logger.info(f"  {'✓' if tts.is_available else '✗'} Riva TTS: {'connected' if tts.is_available else 'browser fallback'}")
+        except Exception as e:
+            logger.warning(f"  PersonaPlex init warning: {e}")
+    else:
+        logger.info("  PersonaPlex: lazy-loading (LEAN_MODE)")
 
     logger.info("Server initialized and ready.")
 

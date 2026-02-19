@@ -1,30 +1,38 @@
 # ═══════════════════════════════════════════════════════════════
-#  InSilico ML Backend — Docker Image for Railway Deployment
+#  InSilico ML Backend — Optimized for Render Free Tier (512MB)
 # ═══════════════════════════════════════════════════════════════
 
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies for RDKit
+# Install only essential system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+# Use slim deployment requirements (no optuna, edge-tts, etc.)
+COPY requirements-deploy.txt .
+RUN pip install --no-cache-dir -r requirements-deploy.txt gunicorn \
+    && rm -rf /root/.cache/pip
 
-# Copy the entire ML directory
-COPY . .
+# Copy only what's needed for serving (skip training scripts)
+COPY qspr/ ./qspr/
+COPY personaplex/ ./personaplex/
+COPY models/ ./models/
+COPY data/ ./data/
+COPY server.py .
+COPY descriptors.py .
 
-# Railway sets PORT env variable automatically
+# Railway/Render set PORT env variable automatically
 ENV PORT=5001
 ENV PYTHONUNBUFFERED=1
+ENV LEAN_MODE=1
+# Reduce memory: tell Python to be frugal
+ENV MALLOC_TRIM_THRESHOLD_=65536
+ENV PYTHONMALLOC=malloc
 
-# Expose port
 EXPOSE ${PORT}
 
-# Use gunicorn for production (more robust than Flask dev server)
-CMD gunicorn --bind 0.0.0.0:${PORT} --workers 2 --timeout 120 --preload "server:app"
+# Single worker + threads to stay under 512MB
+CMD gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 2 --timeout 120 --preload "server:app"
