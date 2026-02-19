@@ -1025,6 +1025,260 @@ def voice_status():
 
 
 # ═══════════════════════════════════════
+#  3D Molecular Geometry & Conformer Generation
+# ═══════════════════════════════════════
+
+@app.route("/generate-3d", methods=["POST"])
+def generate_3d():
+    """
+    Generate 3D coordinates and conformers for a molecule given its SMILES.
+    Returns atom positions, bond information, and optional conformer frames
+    suitable for the Three.js molecular viewer.
+
+    Request JSON:
+      { "smiles": "CCO", "num_conformers": 5 }
+
+    Response JSON:
+      {
+        "atoms": [{ "id": 1, "element": "C", "x": 0, "y": 0, "z": 0 }, ...],
+        "bonds": [{ "atom1": 1, "atom2": 2, "order": 1 }, ...],
+        "conformers": [[{x,y,z}, ...], ...],
+        "name": "ethanol",
+        "smiles": "CCO"
+      }
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Descriptors
+    except ImportError:
+        return jsonify({"error": "RDKit not available on this server"}), 500
+
+    data = request.get_json(force=True)
+    smiles = data.get("smiles", "").strip()
+    num_conformers = min(int(data.get("num_conformers", 5)), 20)
+
+    if not smiles:
+        return jsonify({"error": "SMILES string required"}), 400
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return jsonify({"error": f"Invalid SMILES: {smiles}"}), 400
+
+    # Add hydrogens for proper 3D embedding
+    mol_h = Chem.AddHs(mol)
+
+    # Generate conformers
+    try:
+        conf_ids = AllChem.EmbedMultipleConfs(
+            mol_h,
+            numConfs=max(num_conformers, 1),
+            randomSeed=42,
+            maxAttempts=200,
+            pruneRmsThresh=0.5,
+            useExpTorsionAnglePrefs=True,
+            useBasicKnowledge=True,
+            enforceChirality=True,
+        )
+        if len(conf_ids) == 0:
+            # Fallback: try without pruning
+            conf_ids = AllChem.EmbedMultipleConfs(mol_h, numConfs=1, randomSeed=42)
+
+        # Optimize each conformer with MMFF94
+        for cid in conf_ids:
+            try:
+                AllChem.MMFFOptimizeMolecule(mol_h, confId=cid, maxIters=500)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Conformer generation failed for {smiles}: {e}")
+        # Try basic 2D → 3D fallback
+        AllChem.EmbedMolecule(mol_h, randomSeed=42)
+        conf_ids = [0]
+
+    if mol_h.GetNumConformers() == 0:
+        return jsonify({"error": "Could not generate 3D coordinates"}), 422
+
+    # Use first conformer for atom positions
+    conf0 = mol_h.GetConformer(0)
+
+    # Build atom list (1-indexed IDs)
+    atoms = []
+    for i in range(mol_h.GetNumAtoms()):
+        pos = conf0.GetAtomPosition(i)
+        atom = mol_h.GetAtomWithIdx(i)
+        atoms.append({
+            "id": i + 1,
+            "element": atom.GetSymbol(),
+            "x": round(pos.x, 4),
+            "y": round(pos.y, 4),
+            "z": round(pos.z, 4),
+            "charge": atom.GetFormalCharge(),
+        })
+
+    # Build bond list
+    bonds = []
+    for bond in mol_h.GetBonds():
+        bond_type = bond.GetBondType()
+        order = 1
+        if bond_type == Chem.rdchem.BondType.DOUBLE:
+            order = 2
+        elif bond_type == Chem.rdchem.BondType.TRIPLE:
+            order = 3
+        elif bond_type == Chem.rdchem.BondType.AROMATIC:
+            order = 1.5
+        bonds.append({
+            "atom1": bond.GetBeginAtomIdx() + 1,
+            "atom2": bond.GetEndAtomIdx() + 1,
+            "order": order,
+        })
+
+    # Build conformer frames
+    conformers = []
+    for cid in conf_ids:
+        conf = mol_h.GetConformer(cid)
+        frame = []
+        for i in range(mol_h.GetNumAtoms()):
+            pos = conf.GetAtomPosition(i)
+            frame.append({
+                "x": round(pos.x, 4),
+                "y": round(pos.y, 4),
+                "z": round(pos.z, 4),
+            })
+        conformers.append(frame)
+
+    # Try to get molecule name
+    name = smiles
+    try:
+        name = Chem.MolToSmiles(mol)  # canonical
+    except Exception:
+        pass
+
+    return jsonify({
+        "atoms": atoms,
+        "bonds": bonds,
+        "conformers": conformers if len(conformers) > 1 else [],
+        "smiles": smiles,
+        "name": name,
+        "num_atoms": len(atoms),
+        "num_bonds": len(bonds),
+        "num_conformers": len(conformers),
+        "molecular_weight": round(Descriptors.MolWt(mol), 2),
+    })
+
+
+@app.route("/generate-reaction-3d", methods=["POST"])
+def generate_reaction_3d():
+    """
+    Generate 3D geometries for reactants and products of a reaction.
+    Attempts atom mapping to enable smooth morphing animation.
+
+    Request JSON:
+      {
+        "reactant_smiles": "CCO",
+        "product_smiles": "CC=O",
+        "bond_changes": [
+          { "type": "break", "atom1": 3, "atom2": 6 },
+          { "type": "form", "atom1": 2, "atom2": 3 }
+        ]
+      }
+
+    Response JSON:
+      {
+        "before": { atoms, bonds, ... },
+        "after":  { atoms, bonds, ... },
+        "bondChanges": [...]
+      }
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Descriptors
+    except ImportError:
+        return jsonify({"error": "RDKit not available"}), 500
+
+    data = request.get_json(force=True)
+    reactant_smiles = data.get("reactant_smiles", "").strip()
+    product_smiles = data.get("product_smiles", "").strip()
+    bond_changes = data.get("bond_changes", [])
+
+    if not reactant_smiles or not product_smiles:
+        return jsonify({"error": "Both reactant_smiles and product_smiles required"}), 400
+
+    def smiles_to_3d(smi):
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            return None
+        mol_h = Chem.AddHs(mol)
+        AllChem.EmbedMolecule(mol_h, randomSeed=42, maxAttempts=200)
+        if mol_h.GetNumConformers() == 0:
+            return None
+        try:
+            AllChem.MMFFOptimizeMolecule(mol_h, maxIters=500)
+        except Exception:
+            pass
+        conf = mol_h.GetConformer(0)
+        atoms = []
+        for i in range(mol_h.GetNumAtoms()):
+            pos = conf.GetAtomPosition(i)
+            atom = mol_h.GetAtomWithIdx(i)
+            atoms.append({
+                "id": i + 1,
+                "element": atom.GetSymbol(),
+                "x": round(pos.x, 4),
+                "y": round(pos.y, 4),
+                "z": round(pos.z, 4),
+            })
+        bonds_list = []
+        for bond in mol_h.GetBonds():
+            bt = bond.GetBondType()
+            order = 1
+            if bt == Chem.rdchem.BondType.DOUBLE:
+                order = 2
+            elif bt == Chem.rdchem.BondType.TRIPLE:
+                order = 3
+            bonds_list.append({
+                "atom1": bond.GetBeginAtomIdx() + 1,
+                "atom2": bond.GetEndAtomIdx() + 1,
+                "order": order,
+            })
+        return {"atoms": atoms, "bonds": bonds_list, "smiles": smi}
+
+    before = smiles_to_3d(reactant_smiles)
+    after = smiles_to_3d(product_smiles)
+
+    if not before:
+        return jsonify({"error": f"Invalid reactant SMILES: {reactant_smiles}"}), 400
+    if not after:
+        return jsonify({"error": f"Invalid product SMILES: {product_smiles}"}), 400
+
+    # Pad atoms to equal length for morphing (shorter molecule gets virtual atoms at centroid)
+    max_atoms = max(len(before["atoms"]), len(after["atoms"]))
+    def pad_atoms(mol_data, target):
+        existing = mol_data["atoms"]
+        if len(existing) >= target:
+            return
+        cx = sum(a["x"] for a in existing) / len(existing) if existing else 0
+        cy = sum(a["y"] for a in existing) / len(existing) if existing else 0
+        cz = sum(a["z"] for a in existing) / len(existing) if existing else 0
+        for i in range(len(existing), target):
+            existing.append({
+                "id": i + 1,
+                "element": "H",
+                "x": round(cx, 4),
+                "y": round(cy, 4),
+                "z": round(cz, 4),
+            })
+
+    pad_atoms(before, max_atoms)
+    pad_atoms(after, max_atoms)
+
+    return jsonify({
+        "before": before,
+        "after": after,
+        "bondChanges": bond_changes,
+    })
+
+
+# ═══════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════
 if __name__ == "__main__":
@@ -1064,14 +1318,16 @@ if __name__ == "__main__":
 
     logger.info(f"\nStarting server on http://localhost:{FLASK_PORT}")
     logger.info(f"Endpoints:")
-    logger.info(f"  POST /predict         — Predict all properties (QSPR ensemble)")
-    logger.info(f"  POST /descriptors     — Get molecular descriptors")
-    logger.info(f"  POST /drug-likeness   — Drug-likeness assessment")
-    logger.info(f"  GET  /models          — List capabilities")
-    logger.info(f"  GET  /health          — Health check")
-    logger.info(f"  POST /voice/session   — Create voice session")
-    logger.info(f"  POST /voice/process   — Process voice query")
-    logger.info(f"  POST /voice/tts       — Text-to-speech")
-    logger.info(f"  GET  /voice/status    — Voice subsystem status")
+    logger.info(f"  POST /predict              — Predict all properties (QSPR ensemble)")
+    logger.info(f"  POST /descriptors          — Get molecular descriptors")
+    logger.info(f"  POST /drug-likeness        — Drug-likeness assessment")
+    logger.info(f"  POST /generate-3d          — 3D coordinates & conformers")
+    logger.info(f"  POST /generate-reaction-3d — Reaction 3D geometries")
+    logger.info(f"  GET  /models               — List capabilities")
+    logger.info(f"  GET  /health               — Health check")
+    logger.info(f"  POST /voice/session        — Create voice session")
+    logger.info(f"  POST /voice/process        — Process voice query")
+    logger.info(f"  POST /voice/tts            — Text-to-speech")
+    logger.info(f"  GET  /voice/status         — Voice subsystem status")
 
     app.run(host="0.0.0.0", port=FLASK_PORT, debug=False)
