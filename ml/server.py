@@ -1279,26 +1279,28 @@ def generate_reaction_3d():
 
 
 # ═══════════════════════════════════════
-#  Main
+#  Model Loading (runs for both gunicorn and direct execution)
 # ═══════════════════════════════════════
-if __name__ == "__main__":
+def _initialize():
+    """Load models and initialize services. Called at module load time."""
+    global _server_ready
+    if _server_ready:
+        return
+
     logger.info("=" * 60)
     logger.info("  InSilico Lab — ML + Voice AI Server v2.2")
     logger.info("  Engine: QSPR v2.0 (ECFP4 + Ensemble)")
     logger.info("  Voice:  PersonaPlex + Cerebras AI")
-    logger.info("  ASR:    NVIDIA Riva (or browser fallback)")
-    logger.info("  TTS:    Microsoft Edge Neural TTS")
     logger.info("=" * 60)
 
     load_qspr_models()
 
     if not ensembles and not legacy_models:
-        logger.error(
-            "No models found! Run:\n"
+        logger.warning(
+            "No models found! Predictions will use fallback. Run:\n"
             "  python train_qspr.py      (QSPR v2)\n"
             "  python train_models.py    (Legacy v1)\n"
         )
-        sys.exit(1)
 
     # Initialize PersonaPlex
     try:
@@ -1316,6 +1318,17 @@ if __name__ == "__main__":
     except Exception as e:
         logger.warning(f"  PersonaPlex init warning: {e}")
 
+    logger.info("Server initialized and ready.")
+
+
+# Initialize when module is imported (gunicorn --preload) or run directly
+_initialize()
+
+
+# ═══════════════════════════════════════
+#  Main (for local development: python server.py)
+# ═══════════════════════════════════════
+if __name__ == "__main__":
     logger.info(f"\nStarting server on http://localhost:{FLASK_PORT}")
     logger.info(f"Endpoints:")
     logger.info(f"  POST /predict              — Predict all properties (QSPR ensemble)")

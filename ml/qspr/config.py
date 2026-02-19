@@ -138,5 +138,5 @@ OPTUNA_TIMEOUT = 600  # seconds
 OPTUNA_SEED = 42
 
 # ─── Server Configuration ───
-FLASK_PORT = 5001
+FLASK_PORT = int(os.environ.get("PORT", 5001))
 MODEL_VERSION = "3.0.0"
