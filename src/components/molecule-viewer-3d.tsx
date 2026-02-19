@@ -79,7 +79,7 @@ async function smilesToSDF(smiles: string): Promise<string | null> {
         );
         if (sdfRes.ok) {
           const sdf = await sdfRes.text();
-          if (sdf && sdf.includes("V2000") || sdf.includes("V3000")) {
+          if (sdf && (sdf.includes("V2000") || sdf.includes("V3000"))) {
             console.log("[3D Viewer] Loaded 3D structure from PubChem");
             return sdf;
           }

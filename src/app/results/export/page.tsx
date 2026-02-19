@@ -70,25 +70,34 @@ function ExportContent() {
                     name: molName,
                     formula: molFormula,
                     smiles: molSmiles,
-                    molecularWeight: molMw,
+                    mw: molMw,
                 },
                 properties: propEntries.map(([key, p]) => ({
-                    name: key === "logP" ? "LogP" : key === "pKa" ? "pKa" : key === "tpsa" ? "TPSA" : key === "bioavailability" ? "Bioavailability" : key,
+                    label: key === "logP" ? "LogP" : key === "pKa" ? "pKa" : key === "tpsa" ? "TPSA" : key === "bioavailability" ? "Bioavailability" : key,
                     value: String(p.value),
                     unit: p.unit || "",
                     status: p.status,
                 })),
-                toxicity: {
-                    hergInhibition: { probability: toxicity.herg / 100, risk: toxicity.herg < 30 ? "Low" : toxicity.herg < 60 ? "Moderate" : "High" },
-                    amesMutagenicity: { probability: toxicity.ames / 100, risk: toxicity.ames < 30 ? "Negative" : toxicity.ames < 60 ? "Equivocal" : "Positive" },
-                    hepatotoxicity: { probability: toxicity.hepato / 100, risk: toxicity.hepato < 30 ? "Low" : toxicity.hepato < 60 ? "Moderate" : "High" },
+                toxicity: [
+                    { label: "hERG Inhibition", value: toxicity.herg, risk: toxicity.herg < 30 ? "Low" : toxicity.herg < 60 ? "Moderate" : "High" },
+                    { label: "Ames Mutagenicity", value: toxicity.ames, risk: toxicity.ames < 30 ? "Negative" : toxicity.ames < 60 ? "Equivocal" : "Positive" },
+                    { label: "Hepatotoxicity", value: toxicity.hepato, risk: toxicity.hepato < 30 ? "Low" : toxicity.hepato < 60 ? "Moderate" : "High" },
+                ],
+                conditions: {
+                    temperature: "298.15 K",
+                    pressure: "1 atm",
+                    solvent: "Water (pH 7.4)",
+                    computeCost: "—",
+                    runtime: "—",
+                    confidence: `${molConfidence}%`,
                 },
-                confidence: molConfidence,
-                drugLikeness: {
-                    lipinskiViolations: 0,
-                    overallScore: molConfidence / 100,
+                includeSections: {
+                    moleculeInfo: sections.moleculeInfo ?? true,
+                    properties: sections.properties ?? true,
+                    toxicity: sections.toxicity ?? true,
+                    solubilityCurve: sections.drugLikeness ?? true,
+                    rawMetadata: sections.metadata ?? true,
                 },
-                includeSections: sections,
             };
 
             if (exportFormat === "pdf") {
@@ -236,7 +245,7 @@ function ExportContent() {
                 {/* Right - Sharing & Preview */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                     {/* Share via link */}
-                    <GlassCard glow="cyan">
+                    <GlassCard glow="blue">
                         <h3 style={{ fontWeight: 600, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
                             <Share2 size={16} style={{ color: "var(--accent-cyan)" }} /> Share Results
                         </h3>

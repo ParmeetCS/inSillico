@@ -46,19 +46,19 @@ const PROPERTY_DESCS: Record<string, Record<string, string>> = {
         poor: "May have solubility or permeability issues",
     },
     pka: {
-        optimal: "Well-balanced ionization",
+        optimal: "Non-ionizable under physiological pH",
         moderate: "Context-dependent ionization behavior",
         poor: "May affect absorption kinetics",
     },
     solubility: {
         optimal: "Good aqueous solubility",
         moderate: "Moderate aqueous solubility",
-        poor: "Poor solubility — formulation required",
+        poor: "Poor solubility \u2014 formulation required",
     },
     tpsa: {
         optimal: "Good oral absorption expected",
-        moderate: "Borderline polar surface area",
-        poor: "May have poor membrane permeability",
+        moderate: "Moderate polar surface area",
+        poor: "High polarity \u2014 may limit membrane permeability",
     },
     bioavailability: {
         optimal: "Well-absorbed orally",
@@ -193,10 +193,12 @@ export default function SimulationDemoPage() {
             desc: PROPERTY_DESCS.logp[mlResults.properties.logp.status] || "Lipophilicity",
         },
         pKa: {
-            value: mlResults.properties.pka.value,
-            unit: mlResults.properties.pka.unit,
+            value: mlResults.properties.pka.value ?? "N/A",
+            unit: mlResults.properties.pka.value != null ? mlResults.properties.pka.unit : "",
             status: mlResults.properties.pka.status as "optimal" | "moderate" | "poor",
-            desc: PROPERTY_DESCS.pka[mlResults.properties.pka.status] || "Ionization",
+            desc: mlResults.properties.pka.value == null
+                ? PROPERTY_DESCS.pka.optimal
+                : (PROPERTY_DESCS.pka[mlResults.properties.pka.status] || "Ionization"),
         },
         solubility: {
             value: mlResults.properties.solubility.value,

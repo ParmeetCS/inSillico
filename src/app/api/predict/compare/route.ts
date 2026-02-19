@@ -1,15 +1,15 @@
 /**
- * Next.js API Route — Compare XGBoost vs Decision Tree
+ * Next.js API Route — Compare RandomForest vs XGBoost (QSPR Ensemble)
  * 
  * POST /api/predict/compare
  * Body: { smiles: string }
  * 
- * Returns side-by-side predictions from both models.
+ * Returns side-by-side predictions from both ensemble models.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
-const ML_SERVER_URL = process.env.ML_SERVER_URL || "http://localhost:5001";
+const ML_SERVER_URL = process.env.ML_BACKEND_URL || "http://localhost:5001";
 
 export async function POST(req: NextRequest) {
     try {

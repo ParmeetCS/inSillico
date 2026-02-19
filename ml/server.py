@@ -1,72 +1,108 @@
 """
-server.py — Flask API Server for Molecular Property Prediction
-================================================================
-Predicts drug-like molecular properties using trained ML models
-behind the scenes. The API returns clean property values without
-exposing the underlying ML algorithms.
+server.py — Flask API Server for QSPR-Based Molecular Property Prediction
+============================================================================
+Production-grade Flask API serving QSPR ensemble predictions with
+uncertainty quantification.
 
-The pipeline:
-  1. User provides a SMILES string
-  2. RDKit computes molecular descriptors (features)
-  3. Trained models predict: LogP, Solubility, BBBP, Toxicity
-  4. RDKit directly computes: TPSA, pKa estimate, Bioavailability
-  5. Clean results are returned
+Upgrade from v1:
+  v1: Manual RDKit descriptors → sklearn models → point predictions
+  v2: Morgan FP (ECFP4) → RF+XGBoost ensemble → predictions + confidence
+
+The API contract is BACKWARD COMPATIBLE with v1 — the response structure
+matches the existing Next.js frontend expectations.
+
+Architecture:
+  - Models load ONCE at startup (not per-request)
+  - Fingerprint calculator is shared (stateless, thread-safe)
+  - No global state mutation during requests
+  - Proper exception handling with structured error responses
 
 Endpoints:
   GET  /health        → Server health check
   POST /predict       → Predict all properties for a SMILES
   GET  /models        → List available prediction capabilities
-  POST /descriptors   → Get RDKit-computed descriptors
+  POST /descriptors   → Get molecular descriptors
+  POST /drug-likeness → Drug-likeness assessment
 """
 
 import os
 import sys
 import json
-import math
 import logging
+import time
 import numpy as np
-import joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
 
-sys.path.insert(0, os.path.dirname(__file__))
-from descriptors import compute_descriptors, get_feature_names, get_rdkit_properties, compute_drug_likeness
+# Load .env.local from project root so API keys (Cerebras, Riva, etc.)
+# are available to the Python process — Next.js only loads these for Node.
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_project_root, ".env.local"), override=False)
 
-# ─── Config ───
-MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
-PORT = 5001
+# Add project root
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from qspr.config import (
+    FLASK_PORT, MODEL_DIR, MODEL_VERSION, DATASET_CONFIGS,
+    LEGACY_MODEL_DIR, DESCRIPTOR_VERSION, DATA_DIR,
+)
+from qspr.fingerprints import (
+    MorganFingerprintCalculator,
+    compute_rdkit_properties,
+    compute_drug_likeness,
+)
+from qspr.models import RandomForestQSPR, XGBoostQSPR
+from qspr.ensemble import QSPREnsemble
+from qspr.serialization import ModelSerializer
 
 # ─── Logging ───
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger("insilico-ml")
 
 # ─── App ───
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# ─── Load Models ───
-models = {}
-training_meta = {}
+# ─── Global state (loaded once at startup, read-only during requests) ───
+fp_calculator: MorganFingerprintCalculator = None
+ensembles: dict = {}       # prop_name → QSPREnsemble
+model_metadata: dict = {}  # prop_name → metadata dict
+_server_ready = False
+
+# ─── Legacy fallback ───
+legacy_models: dict = {}
+legacy_descriptors_module = None
 
 
-def load_models():
-    """Load all trained models from disk."""
-    global models, training_meta
+def _load_legacy_models():
+    """Load v1 joblib models as fallback if QSPR models are not available."""
+    global legacy_models, legacy_descriptors_module
 
-    if not os.path.exists(MODEL_DIR):
-        logger.warning(f"Model directory not found: {MODEL_DIR}")
+    try:
+        import importlib
+        spec = importlib.util.spec_from_file_location(
+            "descriptors_legacy",
+            os.path.join(os.path.dirname(__file__), "descriptors.py"),
+        )
+        legacy_descriptors_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(legacy_descriptors_module)
+    except Exception as e:
+        logger.warning(f"Could not load legacy descriptors module: {e}")
         return
 
-    meta_path = os.path.join(MODEL_DIR, "training_metadata.json")
-    if os.path.exists(meta_path):
-        with open(meta_path) as f:
-            training_meta.update(json.load(f))
+    import joblib
 
-    for filename in os.listdir(MODEL_DIR):
+    if not os.path.exists(LEGACY_MODEL_DIR):
+        return
+
+    for filename in os.listdir(LEGACY_MODEL_DIR):
         if not filename.endswith(".joblib"):
             continue
 
-        # Parse: "solubility_xgboost.joblib" → prop="solubility", algo="xgboost"
         parts = filename.replace(".joblib", "").split("_")
         if "decision_tree" in filename:
             prop = "_".join(parts[:-2])
@@ -75,39 +111,32 @@ def load_models():
             prop = "_".join(parts[:-1])
             algo = parts[-1]
 
-        filepath = os.path.join(MODEL_DIR, filename)
+        filepath = os.path.join(LEGACY_MODEL_DIR, filename)
         try:
             data = joblib.load(filepath)
-            if prop not in models:
-                models[prop] = {}
-            models[prop][algo] = data
-            logger.info(f"  ✓ Loaded {prop}/{algo}")
+            if prop not in legacy_models:
+                legacy_models[prop] = {}
+            legacy_models[prop][algo] = data
+            logger.info(f"  ✓ Legacy fallback loaded: {prop}/{algo}")
         except Exception as e:
-            logger.error(f"  ✗ Failed to load {filename}: {e}")
-
-    logger.info(f"Loaded {sum(len(v) for v in models.values())} models for {len(models)} properties")
+            logger.warning(f"  ✗ Failed to load legacy {filename}: {e}")
 
 
-def _predict(smiles: str, prop: str) -> dict:
-    """
-    Internal prediction using XGBoost (primary model).
-    Falls back to decision_tree if xgboost unavailable.
-    """
-    if prop not in models:
-        return {"error": f"No model for '{prop}'"}
+def _predict_legacy(smiles: str, prop: str) -> dict:
+    """Predict using legacy v1 models (fallback)."""
+    if prop not in legacy_models or legacy_descriptors_module is None:
+        return {"error": f"No legacy model for '{prop}'"}
 
-    # Use XGBoost as primary, DT as fallback — user never sees this
-    algo = "xgboost" if "xgboost" in models[prop] else list(models[prop].keys())[0]
-    model_data = models[prop][algo]
+    algo = "xgboost" if "xgboost" in legacy_models[prop] else list(legacy_models[prop].keys())[0]
+    model_data = legacy_models[prop][algo]
     model = model_data["model"]
     scaler = model_data["scaler"]
     feature_names = model_data["feature_names"]
 
-    desc = compute_descriptors(smiles)
+    desc = legacy_descriptors_module.compute_descriptors(smiles)
     X = np.array([[desc[f] for f in feature_names]])
     X_scaled = scaler.transform(X)
 
-    # Classification vs Regression
     if hasattr(model, "predict_proba"):
         prediction = int(model.predict(X_scaled)[0])
         probability = float(model.predict_proba(X_scaled)[0][1])
@@ -117,20 +146,144 @@ def _predict(smiles: str, prop: str) -> dict:
         return {"value": round(prediction, 4)}
 
 
+def load_qspr_models():
+    """
+    Load QSPR v2 models at startup.
+
+    Falls back to legacy v1 models if QSPR models are not yet trained.
+    """
+    global fp_calculator, ensembles, model_metadata, _server_ready
+
+    fp_calculator = MorganFingerprintCalculator()
+    serializer = ModelSerializer()
+
+    available = serializer.list_models()
+    logger.info(f"QSPR models available: {available}")
+
+    for prop_name, config in DATASET_CONFIGS.items():
+        task = config["task"]
+
+        if prop_name not in available:
+            logger.warning(f"  No QSPR model for '{prop_name}' — will use legacy fallback")
+            continue
+
+        try:
+            ensemble = QSPREnsemble(task=task)
+
+            # Load ensemble weights
+            ens_config = serializer.load_ensemble_config(prop_name)
+            weights = ens_config.get("weights", {"random_forest": 0.4, "xgboost": 0.6})
+
+            models_loaded = 0
+
+            # Load RandomForest
+            if "random_forest" in available.get(prop_name, []):
+                rf_data = serializer.load_model(prop_name, "random_forest")
+                rf_model = RandomForestQSPR(task=task)
+                rf_model.model = rf_data["model"]
+                rf_model.scaler = rf_data["scaler"]
+                rf_model._feature_names = rf_data.get("feature_names")
+                rf_model.is_fitted = True
+                ensemble.add_model(
+                    "random_forest", rf_model,
+                    weight=weights.get("random_forest", 0.4),
+                )
+                models_loaded += 1
+
+            # Load XGBoost
+            if "xgboost" in available.get(prop_name, []):
+                xgb_data = serializer.load_model(prop_name, "xgboost")
+                xgb_model = XGBoostQSPR(task=task)
+                xgb_model.model = xgb_data["model"]
+                xgb_model.scaler = xgb_data["scaler"]
+                xgb_model._feature_names = xgb_data.get("feature_names")
+                xgb_model.is_fitted = True
+                ensemble.add_model(
+                    "xgboost", xgb_model,
+                    weight=weights.get("xgboost", 0.6),
+                )
+                models_loaded += 1
+
+            if models_loaded > 0:
+                ensembles[prop_name] = ensemble
+                model_metadata[prop_name] = {
+                    "task": task,
+                    "models": list(ensemble.models.keys()),
+                    "weights": ensemble.weights,
+                }
+                logger.info(f"  ✓ {prop_name}: {models_loaded} models loaded")
+
+        except Exception as e:
+            logger.error(f"  ✗ Failed to load QSPR models for {prop_name}: {e}")
+
+    # Load legacy models as fallback
+    _load_legacy_models()
+
+    _server_ready = True
+    logger.info(
+        f"Ready: {len(ensembles)} QSPR ensembles, "
+        f"{len(legacy_models)} legacy fallbacks"
+    )
+
+
+def _predict_qspr(smiles: str, prop: str) -> dict:
+    """
+    Predict a property using the QSPR ensemble.
+    Falls back to legacy if ensemble is unavailable.
+
+    Returns dict with: value, confidence, uncertainty, model_version, descriptor_type
+    """
+    # Try QSPR ensemble first
+    if prop in ensembles:
+        try:
+            X = fp_calculator.compute(smiles).reshape(1, -1)
+            result = ensembles[prop].predict_single(X)
+            task = DATASET_CONFIGS[prop]["task"]
+
+            if task == "regression":
+                return {
+                    "value": round(float(result["prediction"]), 4),
+                    "confidence": round(float(result["confidence"]), 4),
+                    "uncertainty": round(float(result["uncertainty"]), 4),
+                    "model_version": MODEL_VERSION,
+                    "descriptor_type": DESCRIPTOR_VERSION,
+                }
+            else:
+                return {
+                    "value": int(result["prediction"]),
+                    "probability": round(float(result.get("probability", 0.5)), 4),
+                    "confidence": round(float(result["confidence"]), 4),
+                    "uncertainty": round(float(result["uncertainty"]), 4),
+                    "model_version": MODEL_VERSION,
+                    "descriptor_type": DESCRIPTOR_VERSION,
+                }
+        except Exception as e:
+            logger.warning(f"QSPR prediction failed for {prop}: {e}")
+
+    # Fallback to legacy
+    if prop in legacy_models:
+        result = _predict_legacy(smiles, prop)
+        result["model_version"] = "1.0.0-legacy"
+        result["descriptor_type"] = "rdkit_descriptors"
+        return result
+
+    return {"error": f"No model available for '{prop}'"}
+
+
 def assess_status(prop: str, value) -> str:
     """Assess whether a property value is optimal, moderate, or poor."""
     rules = {
         "logp": lambda v: "optimal" if -0.4 <= v <= 3.5 else ("moderate" if -1 <= v <= 5 else "poor"),
-        "pka": lambda v: "moderate",  # pKa is context-dependent
+        "pka": lambda v: "optimal" if v is None else "moderate",
         "solubility": lambda v: "optimal" if v > 1 else ("moderate" if v > 0.01 else "poor"),
-        "tpsa": lambda v: "optimal" if 20 <= v <= 130 else ("moderate" if v <= 160 else "poor"),
+        "tpsa": lambda v: "optimal" if 20 <= v <= 120 else ("moderate" if 10 <= v <= 140 or v < 20 else "poor"),
         "bioavailability": lambda v: "optimal" if v >= 70 else ("moderate" if v >= 40 else "poor"),
         "toxicity": lambda v: "optimal" if v == "Low" else ("moderate" if v == "Moderate" else "poor"),
     }
     fn = rules.get(prop, lambda v: "moderate")
     try:
         return fn(value)
-    except:
+    except Exception:
         return "moderate"
 
 
@@ -140,26 +293,41 @@ def assess_status(prop: str, value) -> str:
 
 @app.route("/health", methods=["GET"])
 def health():
+    """Server health check."""
     return jsonify({
         "status": "healthy",
-        "properties_available": ["logp", "pka", "solubility", "tpsa", "bioavailability", "toxicity"],
+        "model_version": MODEL_VERSION,
+        "engine": "QSPR v2.0 (ECFP4 + Ensemble)",
+        "properties_available": list(ensembles.keys()) or [
+            "logp", "pka", "solubility", "tpsa", "bioavailability", "toxicity"
+        ],
+        "n_ensembles": len(ensembles),
+        "n_legacy_fallbacks": len(legacy_models),
     })
 
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    """List prediction capabilities (not model internals)."""
+    """List prediction capabilities with model details."""
+    properties_info = [
+        {"key": "logp", "name": "LogP", "description": "Octanol-water partition coefficient", "unit": ""},
+        {"key": "pka", "name": "pKa (acidic)", "description": "Acid dissociation constant", "unit": ""},
+        {"key": "solubility", "name": "Solubility", "description": "Aqueous solubility", "unit": "mg/mL"},
+        {"key": "tpsa", "name": "TPSA", "description": "Topological Polar Surface Area", "unit": "Å²"},
+        {"key": "bioavailability", "name": "Bioavailability", "description": "Oral bioavailability estimate", "unit": "%"},
+        {"key": "toxicity", "name": "Toxicity Risk", "description": "Clinical toxicity risk assessment", "unit": ""},
+    ]
+
     return jsonify({
-        "properties": [
-            {"key": "logp", "name": "LogP", "description": "Octanol-water partition coefficient", "unit": ""},
-            {"key": "pka", "name": "pKa (acidic)", "description": "Acid dissociation constant", "unit": ""},
-            {"key": "solubility", "name": "Solubility", "description": "Aqueous solubility", "unit": "mg/mL"},
-            {"key": "tpsa", "name": "TPSA", "description": "Topological Polar Surface Area", "unit": "Å²"},
-            {"key": "bioavailability", "name": "Bioavailability", "description": "Oral bioavailability estimate", "unit": "%"},
-            {"key": "toxicity", "name": "Toxicity Risk", "description": "Clinical toxicity risk assessment", "unit": ""},
-        ],
+        "properties": properties_info,
+        "engine": {
+            "version": MODEL_VERSION,
+            "descriptor": "Morgan Fingerprints (ECFP4, 2048 bits) + Physicochemical",
+            "models": "RandomForest + XGBoost Ensemble",
+            "validation": "Scaffold-based split",
+        },
         "datasets_used": "MoleculeNet (ESOL, Lipophilicity, BBBP, ClinTox)",
-        "descriptor_engine": "RDKit",
+        "descriptor_engine": "RDKit + Morgan FP",
     })
 
 
@@ -172,8 +340,8 @@ def predict():
       POST /predict
       { "smiles": "CC(=O)OC1=CC=CC=C1C(=O)O" }
 
-    Response: Clean property table matching the UI:
-      LogP, pKa (acidic), Solubility, TPSA, Bioavailability, Toxicity Risk
+    Response: Backward-compatible with v1 API contract.
+    Additions: confidence scores and model metadata per property.
     """
     data = request.get_json()
     if not data or "smiles" not in data:
@@ -184,25 +352,36 @@ def predict():
         return jsonify({"error": "Empty SMILES string"}), 400
 
     try:
-        # ── Step 1: RDKit direct property computation ──
-        rdkit_props = get_rdkit_properties(smiles)
-        descriptors = compute_descriptors(smiles)
+        t_start = time.time()
 
-        # ── Step 2: ML-predicted properties ──
-        logp_pred = _predict(smiles, "logp")
-        sol_pred = _predict(smiles, "solubility")
-        bbbp_pred = _predict(smiles, "bbbp")
-        tox_pred = _predict(smiles, "toxicity")
+        # ── Step 1: RDKit direct property computation ──
+        rdkit_props = compute_rdkit_properties(smiles)
+
+        # ── Step 2: QSPR ensemble predictions ──
+        logp_pred = _predict_qspr(smiles, "logp")
+        sol_pred = _predict_qspr(smiles, "solubility")
+        bbbp_pred = _predict_qspr(smiles, "bbbp")
+        tox_pred = _predict_qspr(smiles, "toxicity")
 
         # ── Step 3: Derive final property values ──
 
-        # LogP — use ML prediction, cross-check with RDKit Crippen
+        # LogP
         logp_value = logp_pred.get("value", rdkit_props["logp_crippen"])
+        logp_confidence = logp_pred.get("confidence", 0.5)
 
-        # pKa — estimate from functional groups
-        n_carboxyl = descriptors.get("n_carboxyl", 0)
-        n_amine = descriptors.get("n_amine", 0)
-        n_hydroxyl = descriptors.get("n_hydroxyl", 0)
+        # pKa — heuristic (no QSPR model for pKa yet)
+        mol_from_fp = fp_calculator.smiles_to_mol(smiles) if fp_calculator else None
+        from rdkit.Chem import Descriptors as RDDesc
+        from rdkit import Chem
+        mol = Chem.MolFromSmiles(smiles)
+        # Count functional groups for pKa estimation
+        n_carboxyl = len(mol.GetSubstructMatches(Chem.MolFromSmarts("[CX3](=O)[OX2H1]"))) if mol else 0
+        n_amine = len(mol.GetSubstructMatches(Chem.MolFromSmarts("[NX3;H2,H1;!$(NC=O)]"))) if mol else 0
+        n_hydroxyl = len(mol.GetSubstructMatches(Chem.MolFromSmarts("[OX2H]"))) if mol else 0
+
+        # Determine if molecule is ionizable
+        has_ionizable_groups = (n_carboxyl + n_amine + n_hydroxyl) > 0
+
         if n_carboxyl > 0:
             pka_value = round(3.5 + 0.4 * (n_carboxyl - 1) + 0.1 * n_hydroxyl, 2)
         elif n_hydroxyl > 0 and n_amine == 0:
@@ -210,18 +389,19 @@ def predict():
         elif n_amine > 0:
             pka_value = round(10.0 - 0.5 * n_amine, 2)
         else:
-            pka_value = 7.0
+            pka_value = None  # Non-ionizable molecule — no meaningful pKa
 
         # Solubility — convert logS to mg/mL
         logs_value = sol_pred.get("value", -2.0)
+        sol_confidence = sol_pred.get("confidence", 0.5)
         mw = rdkit_props["molecular_weight"]
         sol_mg_ml = round(10 ** logs_value * mw, 3)
-        sol_mg_ml = max(0.001, min(sol_mg_ml, 999999))  # clamp to reasonable range
+        sol_mg_ml = max(0.001, min(sol_mg_ml, 999999))
 
-        # TPSA — directly from RDKit (exact calculation, not predicted)
+        # TPSA — directly from RDKit (exact)
         tpsa_value = rdkit_props["tpsa"]
 
-        # Bioavailability — Lipinski Rule of 5 + BBB prediction
+        # Bioavailability — Lipinski + BBB prediction
         hbd = rdkit_props["hbd"]
         hba = rdkit_props["hba"]
         lipinski_violations = sum([
@@ -231,12 +411,13 @@ def predict():
             hba > 10,
         ])
         bbbp_prob = bbbp_pred.get("probability", 0.5)
-        # Bioavailability estimate: base from Lipinski, modulated by BBBP probability
+        bbbp_confidence = bbbp_pred.get("confidence", 0.5)
         bioavail_base = max(0, 100 - lipinski_violations * 25)
         bioavail_value = round(bioavail_base * (0.6 + 0.4 * bbbp_prob))
 
-        # Toxicity Risk — from ClinTox model
+        # Toxicity
         tox_prob = tox_pred.get("probability", 0.1)
+        tox_confidence = tox_pred.get("confidence", 0.5)
         if tox_prob < 0.2:
             tox_label = "Low"
         elif tox_prob < 0.5:
@@ -245,12 +426,23 @@ def predict():
             tox_label = "High"
 
         # Toxicity sub-scores (derived from overall toxicity probability)
-        herg_prob = round(tox_prob * 0.35 + np.random.uniform(0, 0.05), 4)
-        ames_prob = round(tox_prob * 0.25 + np.random.uniform(0, 0.04), 4)
-        hepato_prob = round(tox_prob * 0.55 + np.random.uniform(0, 0.06), 4)
+        # Deterministic derivation from tox_prob (no randomness in v2)
+        herg_prob = round(min(tox_prob * 0.4 + 0.02, 1.0), 4)
+        ames_prob = round(min(tox_prob * 0.3 + 0.01, 1.0), 4)
+        hepato_prob = round(min(tox_prob * 0.6 + 0.03, 1.0), 4)
 
-        # ── Step 4: Build clean response ──
-        # Each property matches the user's UI table exactly
+        # Confidence — ensemble-weighted average
+        pred_confidences = [
+            c for c in [logp_confidence, sol_confidence, bbbp_confidence, tox_confidence]
+            if isinstance(c, (int, float))
+        ]
+        overall_confidence = round(
+            np.mean(pred_confidences) * 100 if pred_confidences else 70.0, 1
+        )
+
+        prediction_time = round(time.time() - t_start, 3)
+
+        # ── Step 4: Build response (backward-compatible with v1) ──
         response = {
             "smiles": smiles,
             "molecule": {
@@ -258,7 +450,7 @@ def predict():
                 "formula": rdkit_props["formula"],
                 "molecular_weight": mw,
                 "exact_mass": rdkit_props["exact_mass"],
-                "qed": rdkit_props["qed"],  # drug-likeness
+                "qed": rdkit_props["qed"],
             },
 
             # ── The 6 predicted properties (matching UI table) ──
@@ -268,36 +460,43 @@ def predict():
                     "unit": "",
                     "status": assess_status("logp", logp_value),
                     "description": "Lipophilicity — octanol/water partition coefficient",
+                    "confidence": round(logp_confidence, 3),
                 },
                 "pka": {
                     "value": pka_value,
                     "unit": "",
                     "status": assess_status("pka", pka_value),
-                    "description": "Acid dissociation constant",
+                    "description": "Non-ionizable under physiological pH" if pka_value is None else "Acid dissociation constant",
+                    "confidence": 0.6 if pka_value is not None else 0.95,
+                    "ionizable": has_ionizable_groups,
                 },
                 "solubility": {
                     "value": round(sol_mg_ml, 2),
                     "unit": "mg/mL",
                     "status": assess_status("solubility", sol_mg_ml),
                     "description": "Aqueous solubility at pH 7.4",
+                    "confidence": round(sol_confidence, 3),
                 },
                 "tpsa": {
                     "value": tpsa_value,
                     "unit": "Å²",
                     "status": assess_status("tpsa", tpsa_value),
                     "description": "Topological polar surface area",
+                    "confidence": 1.0,  # Exact RDKit calculation
                 },
                 "bioavailability": {
                     "value": bioavail_value,
                     "unit": "%",
                     "status": assess_status("bioavailability", bioavail_value),
                     "description": "Estimated oral bioavailability",
+                    "confidence": round(bbbp_confidence * 0.8, 3),
                 },
                 "toxicity": {
                     "value": tox_label,
                     "unit": "",
                     "status": assess_status("toxicity", tox_label),
                     "description": "Clinical toxicity risk level",
+                    "confidence": round(tox_confidence, 3),
                 },
             },
 
@@ -317,11 +516,21 @@ def predict():
                 "hba_ok": hba <= 10,
             },
 
-            # ── Drug-Likeness Score (Lipinski + Veber + PAINS + QED) ──
-            "drug_likeness": compute_drug_likeness(smiles),
+            # ── Drug-Likeness Score (pass QSPR logp for consistency) ──
+            "drug_likeness": compute_drug_likeness(smiles, logp_override=round(logp_value, 2)),
 
-            # ── Confidence (based on descriptor coverage and model training) ──
-            "confidence": round(min(98, 85 + rdkit_props["qed"] * 15), 1),
+            # ── Confidence (overall) ──
+            "confidence": overall_confidence,
+
+            # ── v2 metadata ──
+            "model_info": {
+                "version": MODEL_VERSION,
+                "engine": "QSPR v2.0",
+                "descriptor": DESCRIPTOR_VERSION,
+                "ensemble": "RandomForest + XGBoost",
+                "validation": "scaffold-based",
+                "prediction_time_ms": round(prediction_time * 1000, 1),
+            },
         }
 
         return jsonify(response)
@@ -335,19 +544,22 @@ def predict():
 
 @app.route("/descriptors", methods=["POST"])
 def get_descriptors():
-    """Compute and return RDKit molecular descriptors."""
+    """Compute and return molecular descriptors (fingerprint info + RDKit properties)."""
     data = request.get_json()
     if not data or "smiles" not in data:
         return jsonify({"error": "Missing 'smiles'"}), 400
 
     try:
         smiles = data["smiles"].strip()
-        desc = compute_descriptors(smiles)
-        props = get_rdkit_properties(smiles)
+        props = compute_rdkit_properties(smiles)
+
+        # Morgan FP info (don't send 2048-bit vector — just metadata)
+        fp_info = fp_calculator.describe() if fp_calculator else {}
+
         return jsonify({
             "smiles": smiles,
-            "descriptors": desc,
             "rdkit_properties": props,
+            "descriptor_info": fp_info,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -368,27 +580,486 @@ def drug_likeness():
         return jsonify({"error": str(e)}), 500
 
 
+# ─── QSPR Dataset Lookup ───
+
+import pandas as pd
+from rdkit import Chem as _Chem
+
+_dataset_frames: dict = {}  # loaded lazily
+
+
+def _load_datasets():
+    """Load QSPR training CSV files into pandas DataFrames (once)."""
+    global _dataset_frames
+    if _dataset_frames:
+        return _dataset_frames
+
+    for prop_name, cfg in DATASET_CONFIGS.items():
+        filepath = os.path.join(DATA_DIR, cfg["file"])
+        if os.path.exists(filepath):
+            try:
+                df = pd.read_csv(filepath)
+                smiles_col = cfg["smiles_col"]
+                target_col = cfg["target_col"]
+                # Compute canonical SMILES for reliable lookup
+                canonical = []
+                for smi in df[smiles_col]:
+                    mol = _Chem.MolFromSmiles(str(smi))
+                    canonical.append(_Chem.MolToSmiles(mol) if mol else str(smi))
+                df["_canonical_smiles"] = canonical
+                _dataset_frames[prop_name] = {
+                    "df": df,
+                    "smiles_col": smiles_col,
+                    "target_col": target_col,
+                    "task": cfg["task"],
+                    "description": cfg["description"],
+                    "unit": cfg.get("target_unit", ""),
+                    "n_compounds": len(df),
+                }
+                logger.info(f"  Dataset loaded: {prop_name} ({len(df)} compounds)")
+            except Exception as e:
+                logger.warning(f"  Failed to load dataset {prop_name}: {e}")
+
+    return _dataset_frames
+
+
+@app.route("/qspr/lookup", methods=["POST"])
+def qspr_lookup():
+    """
+    Look up a molecule in the QSPR training datasets.
+
+    POST /qspr/lookup
+    Body: {
+        "smiles": "CC(=O)OC1=CC=CC=C1C(=O)O",
+        "name": "aspirin"  (optional, searches by name if available)
+    }
+
+    Returns measured/experimental values from training data.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
+
+        smiles = data.get("smiles", "").strip()
+        search_name = data.get("name", "").strip().lower()
+
+        if not smiles and not search_name:
+            return jsonify({"error": "Provide 'smiles' or 'name'"}), 400
+
+        datasets = _load_datasets()
+        if not datasets:
+            return jsonify({"error": "No QSPR datasets available"}), 500
+
+        # Canonicalize the query SMILES
+        canonical_query = None
+        if smiles:
+            mol = _Chem.MolFromSmiles(smiles)
+            if mol:
+                canonical_query = _Chem.MolToSmiles(mol)
+            else:
+                return jsonify({"error": f"Invalid SMILES: {smiles}"}), 400
+
+        results = {}
+        found_in = []
+
+        for prop_name, ds in datasets.items():
+            df = ds["df"]
+            match = None
+
+            # Search by canonical SMILES
+            if canonical_query:
+                matches = df[df["_canonical_smiles"] == canonical_query]
+                if not matches.empty:
+                    match = matches.iloc[0]
+
+            # Search by name (if available and no SMILES match)
+            if match is None and search_name:
+                name_cols = [c for c in df.columns if "name" in c.lower() or "compound" in c.lower()]
+                for nc in name_cols:
+                    name_matches = df[df[nc].astype(str).str.lower().str.contains(search_name, na=False)]
+                    if not name_matches.empty:
+                        match = name_matches.iloc[0]
+                        break
+
+            if match is not None:
+                target_value = match[ds["target_col"]]
+                entry = {
+                    "measured_value": float(target_value) if pd.notna(target_value) else None,
+                    "unit": ds["unit"],
+                    "task": ds["task"],
+                    "dataset": ds["description"],
+                    "dataset_size": ds["n_compounds"],
+                    "smiles_in_dataset": match[ds["smiles_col"]],
+                }
+                # Include name if available
+                name_cols = [c for c in df.columns if "name" in c.lower() or "compound" in c.lower()]
+                for nc in name_cols:
+                    if pd.notna(match[nc]):
+                        entry["compound_name"] = str(match[nc])
+                        break
+                results[prop_name] = entry
+                found_in.append(prop_name)
+
+        if not results:
+            return jsonify({
+                "found": False,
+                "message": "Molecule not found in any QSPR training dataset.",
+                "datasets_searched": list(datasets.keys()),
+                "dataset_sizes": {k: v["n_compounds"] for k, v in datasets.items()},
+            })
+
+        return jsonify({
+            "found": True,
+            "query_smiles": smiles,
+            "canonical_smiles": canonical_query,
+            "found_in_datasets": found_in,
+            "measured_properties": results,
+            "note": "These are experimentally measured values from the training datasets, not ML predictions.",
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logger.error(f"QSPR lookup error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/qspr/stats", methods=["GET"])
+def qspr_stats():
+    """Return QSPR dataset statistics for AI context."""
+    datasets = _load_datasets()
+    stats = {}
+    for prop_name, ds in datasets.items():
+        df = ds["df"]
+        target_col = ds["target_col"]
+        target_vals = pd.to_numeric(df[target_col], errors="coerce").dropna()
+        stats[prop_name] = {
+            "description": ds["description"],
+            "n_compounds": ds["n_compounds"],
+            "task": ds["task"],
+            "unit": ds["unit"],
+            "target_stats": {
+                "mean": round(float(target_vals.mean()), 4) if len(target_vals) > 0 else None,
+                "std": round(float(target_vals.std()), 4) if len(target_vals) > 0 else None,
+                "min": round(float(target_vals.min()), 4) if len(target_vals) > 0 else None,
+                "max": round(float(target_vals.max()), 4) if len(target_vals) > 0 else None,
+            },
+        }
+    return jsonify({"datasets": stats})
+
+
+# ═══════════════════════════════════════════════════════════
+#  PersonaPlex Voice AI Endpoints
+# ═══════════════════════════════════════════════════════════
+
+from personaplex.session_manager import get_session_manager
+from personaplex.cerebras_bridge import get_cerebras_bridge
+from personaplex.riva_client import get_tts_client, get_asr_client
+from personaplex.audio_processor import AudioProcessor
+
+# Voice session audio processors (session_id → AudioProcessor)
+_audio_processors: dict = {}
+
+
+@app.route("/voice/session", methods=["POST"])
+def create_voice_session():
+    """
+    Create a new voice session.
+
+    POST /voice/session
+    Body: { "user_id": "...", "context": { ... } }
+
+    Returns: { "session_id": "...", "capabilities": { ... } }
+    """
+    data = request.get_json()
+    if not data or "user_id" not in data:
+        return jsonify({"error": "Missing 'user_id'"}), 400
+
+    user_id = data["user_id"]
+    context = data.get("context", {})
+
+    try:
+        sm = get_session_manager()
+        session = sm.create_session(user_id=user_id, context=context)
+
+        # Initialize audio processor
+        _audio_processors[session.session_id] = AudioProcessor()
+
+        # Check Riva availability
+        asr = get_asr_client()
+        tts = get_tts_client()
+
+        return jsonify({
+            "session_id": session.session_id,
+            "capabilities": {
+                "riva_asr": asr.is_available,
+                "riva_tts": tts.is_available,
+                "cerebras_ai": get_cerebras_bridge().is_configured,
+                "tool_calling": True,
+                "streaming": True,
+            },
+            "config": {
+                "sample_rate": 16000,
+                "channels": 1,
+                "encoding": "pcm_s16le",
+                "frame_size_ms": 30,
+            },
+        })
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 429
+
+
+@app.route("/voice/session/<session_id>", methods=["DELETE"])
+def end_voice_session(session_id):
+    """End a voice session."""
+    sm = get_session_manager()
+    sm.end_session(session_id)
+    _audio_processors.pop(session_id, None)
+    return jsonify({"status": "ended"})
+
+
+@app.route("/voice/session/<session_id>", methods=["GET"])
+def get_voice_session_info(session_id):
+    """Get voice session status."""
+    sm = get_session_manager()
+    info = sm.get_session_info(session_id)
+    if not info:
+        return jsonify({"error": "Session not found or expired"}), 404
+    return jsonify(info)
+
+
+@app.route("/voice/process", methods=["POST"])
+def voice_process():
+    """
+    Process a voice query (text already transcribed).
+
+    This is the primary voice interaction endpoint. The frontend
+    handles ASR (browser-side) and sends transcribed text.
+
+    POST /voice/process
+    Body: {
+        "session_id": "...",
+        "text": "What is Aspirin's LogP?",
+        "user_context": "..."  (optional)
+    }
+
+    Returns: {
+        "text": "...",
+        "audio_base64": "..." (if Riva TTS available),
+        "tool_calls": [...],
+        "latency_ms": 123.4
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
+
+    session_id = data.get("session_id", "")
+    text = data.get("text", "").strip()
+    user_context = data.get("user_context", "")
+
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+
+    # Validate session
+    sm = get_session_manager()
+    session = sm.get_session(session_id) if session_id else None
+
+    # Build conversation messages
+    if session:
+        session.add_message("user", text)
+        messages = session.get_messages_for_llm()
+    else:
+        messages = [{"role": "user", "content": text}]
+
+    # Generate response via Cerebras
+    bridge = get_cerebras_bridge()
+    result = bridge.generate_response(
+        messages=messages,
+        user_context=user_context,
+        use_tools=True,
+        temperature=0.7,
+    )
+
+    response_text = result["text"]
+
+    # Add assistant response to session history
+    if session:
+        session.add_message("assistant", response_text)
+
+    # Try TTS synthesis
+    audio_base64 = None
+    tts = get_tts_client()
+    if tts.is_available:
+        audio_base64 = tts.synthesize_to_base64(response_text)
+
+    return jsonify({
+        "text": response_text,
+        "audio_base64": audio_base64,
+        "tool_calls": result.get("tool_calls", []),
+        "usage": result.get("usage", {}),
+        "latency_ms": result.get("latency_ms", 0),
+        "tts_available": tts.is_available,
+    })
+
+
+@app.route("/voice/tts", methods=["POST"])
+def voice_tts():
+    """
+    Text-to-Speech synthesis endpoint using Microsoft Edge TTS (neural voices).
+
+    POST /voice/tts
+    Body: { "text": "...", "voice": "en-US-AriaNeural" (optional) }
+
+    Returns: MP3 audio stream.
+    """
+    data = request.get_json()
+    if not data or "text" not in data:
+        return jsonify({"error": "Missing 'text'"}), 400
+
+    text = data["text"].strip()
+    if not text:
+        return jsonify({"error": "Empty text"}), 400
+
+    # Pick voice — default to a warm, natural female voice
+    voice = data.get("voice", "en-US-AriaNeural")
+
+    try:
+        import asyncio
+        import edge_tts
+
+        async def _synth():
+            comm = edge_tts.Communicate(text, voice, rate="+5%", pitch="+0Hz")
+            chunks = []
+            async for chunk in comm.stream():
+                if chunk["type"] == "audio":
+                    chunks.append(chunk["data"])
+            return b"".join(chunks)
+
+        # Run async in sync context
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                audio_bytes = pool.submit(lambda: asyncio.run(_synth())).result(timeout=10)
+        else:
+            audio_bytes = asyncio.run(_synth())
+
+        if audio_bytes:
+            from flask import Response
+            return Response(
+                audio_bytes,
+                mimetype="audio/mpeg",
+                headers={
+                    "Content-Disposition": "inline; filename=speech.mp3",
+                    "Cache-Control": "no-cache",
+                },
+            )
+        else:
+            return jsonify({"text": text, "tts_available": False, "fallback": "browser_speech_synthesis"}), 200
+
+    except ImportError:
+        logger.warning("edge-tts not installed — falling back to browser TTS")
+        return jsonify({"text": text, "tts_available": False, "fallback": "browser_speech_synthesis"}), 200
+    except Exception as e:
+        logger.error(f"Edge TTS error: {e}")
+        return jsonify({"text": text, "tts_available": False, "fallback": "browser_speech_synthesis"}), 200
+
+
+@app.route("/voice/status", methods=["GET"])
+def voice_status():
+    """Voice subsystem status check."""
+    sm = get_session_manager()
+    asr = get_asr_client()
+    tts = get_tts_client()
+    bridge = get_cerebras_bridge()
+
+    # Check if edge-tts is available
+    edge_tts_ok = False
+    try:
+        import edge_tts  # noqa: F401
+        edge_tts_ok = True
+    except ImportError:
+        pass
+
+    return jsonify({
+        "voice_engine": "PersonaPlex v1.1",
+        "active_sessions": sm.get_active_count(),
+        "capabilities": {
+            "riva_asr": asr.is_available,
+            "riva_tts": tts.is_available,
+            "edge_tts": edge_tts_ok,
+            "cerebras_ai": bridge.is_configured,
+        },
+        "tts_voices": [
+            "en-US-AriaNeural",
+            "en-US-JennyNeural",
+            "en-US-GuyNeural",
+            "en-GB-SoniaNeural",
+            "en-US-AnaNeural",
+        ] if edge_tts_ok else [],
+        "config": {
+            "session_timeout_sec": 600,
+            "max_sessions": 100,
+            "max_per_user": 3,
+            "sample_rate": 16000,
+        },
+    })
+
+
 # ═══════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════
 if __name__ == "__main__":
-    logger.info("=" * 50)
-    logger.info("  InSilico Prediction Server")
-    logger.info("  Descriptor Engine: RDKit")
-    logger.info("  Data: MoleculeNet Benchmarks")
-    logger.info("=" * 50)
+    logger.info("=" * 60)
+    logger.info("  InSilico Lab — ML + Voice AI Server v2.2")
+    logger.info("  Engine: QSPR v2.0 (ECFP4 + Ensemble)")
+    logger.info("  Voice:  PersonaPlex + Cerebras AI")
+    logger.info("  ASR:    NVIDIA Riva (or browser fallback)")
+    logger.info("  TTS:    Microsoft Edge Neural TTS")
+    logger.info("=" * 60)
 
-    load_models()
+    load_qspr_models()
 
-    if not models:
-        logger.error("No models found! Run train_models.py first.")
+    if not ensembles and not legacy_models:
+        logger.error(
+            "No models found! Run:\n"
+            "  python train_qspr.py      (QSPR v2)\n"
+            "  python train_models.py    (Legacy v1)\n"
+        )
         sys.exit(1)
 
-    logger.info(f"\nStarting server on http://localhost:{PORT}")
-    logger.info(f"Endpoints:")
-    logger.info(f"  POST /predict       — Predict all properties")
-    logger.info(f"  POST /descriptors   — Get RDKit descriptors")
-    logger.info(f"  GET  /models        — List capabilities")
-    logger.info(f"  GET  /health        — Health check")
+    # Initialize PersonaPlex
+    try:
+        sm = get_session_manager()
+        bridge = get_cerebras_bridge()
+        if bridge.is_configured:
+            logger.info("  ✓ Cerebras AI configured")
+        else:
+            logger.warning("  ✗ Cerebras API key not set — voice reasoning disabled")
 
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+        asr = get_asr_client()
+        tts = get_tts_client()
+        logger.info(f"  {'✓' if asr.is_available else '✗'} Riva ASR: {'connected' if asr.is_available else 'browser fallback'}")
+        logger.info(f"  {'✓' if tts.is_available else '✗'} Riva TTS: {'connected' if tts.is_available else 'browser fallback'}")
+    except Exception as e:
+        logger.warning(f"  PersonaPlex init warning: {e}")
+
+    logger.info(f"\nStarting server on http://localhost:{FLASK_PORT}")
+    logger.info(f"Endpoints:")
+    logger.info(f"  POST /predict         — Predict all properties (QSPR ensemble)")
+    logger.info(f"  POST /descriptors     — Get molecular descriptors")
+    logger.info(f"  POST /drug-likeness   — Drug-likeness assessment")
+    logger.info(f"  GET  /models          — List capabilities")
+    logger.info(f"  GET  /health          — Health check")
+    logger.info(f"  POST /voice/session   — Create voice session")
+    logger.info(f"  POST /voice/process   — Process voice query")
+    logger.info(f"  POST /voice/tts       — Text-to-speech")
+    logger.info(f"  GET  /voice/status    — Voice subsystem status")
+
+    app.run(host="0.0.0.0", port=FLASK_PORT, debug=False)

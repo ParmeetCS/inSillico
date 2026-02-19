@@ -1,0 +1,33 @@
+{
+  "property": "solubility",
+  "model_name": "random_forest",
+  "model_class": "RandomForestQSPR",
+  "task": "regression",
+  "model_version": "2.0.0",
+  "descriptor_version": "ecfp4_2048_v2",
+  "trained_at": "2026-02-18 16:19:07 UTC",
+  "metrics": {
+    "r2": 0.5462,
+    "rmse": 1.2511,
+    "mae": 0.9524
+  },
+  "dataset_stats": {
+    "n_samples": 1117,
+    "task_type": "regression",
+    "target_mean": -3.0502909579230084,
+    "target_std": 2.0937723359625666,
+    "target_min": -11.6,
+    "target_max": 1.58,
+    "target_median": -2.863
+  },
+  "hyperparameters": {
+    "n_estimators": 100,
+    "max_depth": null,
+    "min_samples_split": 5,
+    "min_samples_leaf": 2,
+    "max_features": "sqrt",
+    "n_jobs": -1,
+    "random_state": 42
+  },
+  "n_features": 2056
+}

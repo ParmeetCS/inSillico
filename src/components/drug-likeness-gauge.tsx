@@ -236,7 +236,14 @@ export default function DrugLikenessGauge({ data }: { data: DrugLikenessData }) 
     const summaryText = useMemo(() => {
         const parts: string[] = [];
         if (lipinski.violations === 0 && veber.violations === 0 && pains.passed) {
-            parts.push("Excellent drug-like profile — passes all filter criteria.");
+            // Only say "excellent" if score actually reflects it
+            if (score >= 70) {
+                parts.push("Excellent drug-like profile \u2014 passes all filter criteria.");
+            } else if (score >= 50) {
+                parts.push("Passes all filter criteria. Low QED limits overall score.");
+            } else {
+                parts.push("Passes all filter criteria, but low QED indicates limited drug-likeness.");
+            }
         } else {
             if (lipinski.violations > 0) {
                 parts.push(`${lipinski.violations} Lipinski violation${lipinski.violations > 1 ? "s" : ""}`);

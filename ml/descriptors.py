@@ -163,7 +163,7 @@ _pains_params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS)
 _pains_catalog = FilterCatalog(_pains_params)
 
 
-def compute_drug_likeness(smiles: str) -> Dict:
+def compute_drug_likeness(smiles: str, logp_override: float = None) -> Dict:
     """
     Compute a comprehensive drug-likeness assessment including:
       - Lipinski Rule of Five
@@ -172,6 +172,11 @@ def compute_drug_likeness(smiles: str) -> Dict:
       - QED (quantitative estimate of drug-likeness)
       - Overall Drugability Score (0–100) with letter grade
 
+    Args:
+        smiles: SMILES string
+        logp_override: If provided, use this LogP value instead of
+                       RDKit Crippen LogP, for consistency with QSPR predictions.
+
     Returns a dictionary suitable for JSON serialisation to the frontend.
     """
     mol = Chem.MolFromSmiles(smiles)
@@ -179,7 +184,7 @@ def compute_drug_likeness(smiles: str) -> Dict:
         raise ValueError(f"Invalid SMILES: {smiles}")
 
     mw = Descriptors.MolWt(mol)
-    logp = Crippen.MolLogP(mol)
+    logp = logp_override if logp_override is not None else Crippen.MolLogP(mol)
     hbd = Descriptors.NumHDonors(mol)
     hba = Descriptors.NumHAcceptors(mol)
     tpsa = Descriptors.TPSA(mol)

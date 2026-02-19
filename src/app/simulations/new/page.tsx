@@ -40,9 +40,9 @@ const STATUS_COLORS = {
 
 const PROPERTY_DESCS: Record<string, Record<string, string>> = {
     logp: { optimal: "Ideal for membrane permeability", moderate: "Acceptable lipophilicity", poor: "May have solubility or permeability issues" },
-    pka: { optimal: "Well-balanced ionization", moderate: "Context-dependent ionization behavior", poor: "May affect absorption kinetics" },
-    solubility: { optimal: "Good aqueous solubility", moderate: "Moderate aqueous solubility", poor: "Poor solubility — formulation required" },
-    tpsa: { optimal: "Good oral absorption expected", moderate: "Borderline polar surface area", poor: "May have poor membrane permeability" },
+    pka: { optimal: "Non-ionizable under physiological pH", moderate: "Context-dependent ionization behavior", poor: "May affect absorption kinetics" },
+    solubility: { optimal: "Good aqueous solubility", moderate: "Moderate aqueous solubility", poor: "Poor solubility \u2014 formulation required" },
+    tpsa: { optimal: "Good oral absorption expected", moderate: "Moderate polar surface area", poor: "High polarity \u2014 may limit membrane permeability" },
     bioavailability: { optimal: "Well-absorbed orally", moderate: "Moderate oral absorption", poor: "Poor oral bioavailability expected" },
     toxicity: { optimal: "Favorable safety profile", moderate: "Monitor for potential toxicity", poor: "Significant toxicity risk" },
 };
@@ -53,13 +53,14 @@ function classifyResult(key: string, value: number | string) {
         const v = String(value).toLowerCase();
         if (v === "low" || v === "very low") return "optimal";
         if (v === "moderate") return "moderate";
+        if (v === "n/a" || v === "non-ionizable") return "optimal";
         return "poor";
     }
     switch (key) {
         case "logp": return value >= 0 && value <= 5 ? "optimal" : value >= -1 && value <= 6 ? "moderate" : "poor";
         case "pka": return value >= 2 && value <= 12 ? "moderate" : "optimal";
         case "solubility": return value > 10 ? "optimal" : value > 1 ? "moderate" : "poor";
-        case "tpsa": return value >= 20 && value <= 120 ? "optimal" : value >= 10 && value <= 140 ? "moderate" : "poor";
+        case "tpsa": return value >= 20 && value <= 120 ? "optimal" : value >= 10 && value <= 140 || value < 20 ? "moderate" : "poor";
         case "bioavailability": return value >= 70 ? "optimal" : value >= 40 ? "moderate" : "poor";
         default: return "moderate";
     }
@@ -72,32 +73,43 @@ function buildDisplayResults(rawResults: any) {
 
     if (rawResults.logp) {
         const val = rawResults.logp.value ?? rawResults.logp;
-        const status = classifyResult("logp", val);
+        const status = rawResults.logp.status ?? classifyResult("logp", val);
         results.logP = { value: typeof val === "number" ? Math.round(val * 100) / 100 : val, unit: "", status, desc: PROPERTY_DESCS.logp[status] };
     }
     if (rawResults.pka) {
-        const val = rawResults.pka.acidic ?? rawResults.pka.value ?? rawResults.pka;
-        const status = classifyResult("pka", val);
-        results.pKa = { value: typeof val === "number" ? Math.round(val * 100) / 100 : val, unit: "", status, desc: PROPERTY_DESCS.pka[status] };
+        const rawVal = rawResults.pka.acidic ?? rawResults.pka.value ?? rawResults.pka;
+        const isIonizable = rawResults.pka.ionizable !== false && rawVal != null;
+        const val = isIonizable && typeof rawVal === "number" ? Math.round(rawVal * 100) / 100 : rawVal;
+        if (!isIonizable || val == null) {
+            results.pKa = { value: "N/A", unit: "", status: "optimal", desc: PROPERTY_DESCS.pka.optimal };
+        } else {
+            const status = rawResults.pka.status ?? classifyResult("pka", val);
+            results.pKa = { value: val, unit: "", status, desc: PROPERTY_DESCS.pka[status] };
+        }
     }
     if (rawResults.solubility) {
         const val = rawResults.solubility.value_mg_ml ?? rawResults.solubility.value ?? rawResults.solubility;
-        const status = classifyResult("solubility", val);
+        const status = rawResults.solubility.status ?? classifyResult("solubility", val);
         results.solubility = { value: typeof val === "number" ? Math.round(val * 1000) / 1000 : val, unit: "mg/mL", status, desc: PROPERTY_DESCS.solubility[status] };
     }
-    if (rawResults.tpsa) {
-        const val = rawResults.tpsa.value ?? rawResults.tpsa;
-        const status = classifyResult("tpsa", val);
-        results.tpsa = { value: typeof val === "number" ? Math.round(val * 10) / 10 : val, unit: "Å²", status, desc: PROPERTY_DESCS.tpsa[status] };
+    if (rawResults.tpsa != null) {
+        const val = typeof rawResults.tpsa === "object" ? (rawResults.tpsa.value ?? 0) : rawResults.tpsa;
+        const numVal = typeof val === "number" ? Math.round(val * 10) / 10 : val;
+        const status = (rawResults.tpsa?.status as "optimal" | "moderate" | "poor") ?? classifyResult("tpsa", numVal);
+        // Special description for very low TPSA (non-polar molecules)
+        const desc = typeof numVal === "number" && numVal < 20
+            ? "Low polarity — good membrane permeability"
+            : PROPERTY_DESCS.tpsa[status];
+        results.tpsa = { value: numVal, unit: "Å²", status, desc };
     }
     if (rawResults.bioavailability) {
         const val = rawResults.bioavailability.score != null ? Math.round(rawResults.bioavailability.score * 100) : (rawResults.bioavailability.value ?? rawResults.bioavailability);
-        const status = classifyResult("bioavailability", val);
+        const status = rawResults.bioavailability.status ?? classifyResult("bioavailability", val);
         results.bioavailability = { value: val, unit: "%", status, desc: PROPERTY_DESCS.bioavailability[status] };
     }
     if (rawResults.toxicity) {
         const risk = rawResults.toxicity.herg_inhibition?.risk ?? rawResults.toxicity.value ?? "Low";
-        const status = classifyResult("toxicity", risk);
+        const status = rawResults.toxicity.status ?? classifyResult("toxicity", risk);
         results.toxicity = { value: risk, unit: "", status, desc: PROPERTY_DESCS.toxicity[status] };
     }
 
@@ -198,18 +210,20 @@ function SimulationSetupInner() {
             const tox = mlData.toxicity_screening || {};
 
             // Transform ML response into the format buildDisplayResults expects
+            // Pass through backend status to avoid re-classification with different thresholds
             const results = {
-                logp: props.logp ? { value: props.logp.value, confidence: 0.92 } : undefined,
-                pka: props.pka ? { acidic: props.pka.value, value: props.pka.value, confidence: 0.88 } : undefined,
-                solubility: props.solubility ? { value_mg_ml: props.solubility.value, value: props.solubility.value, confidence: 0.90 } : undefined,
-                tpsa: props.tpsa ? { value: props.tpsa.value, confidence: 0.95 } : undefined,
-                bioavailability: props.bioavailability ? { score: props.bioavailability.value / 100, value: props.bioavailability.value, confidence: 0.85 } : undefined,
+                logp: props.logp ? { value: props.logp.value, status: props.logp.status, confidence: props.logp.confidence } : undefined,
+                pka: props.pka ? { acidic: props.pka.value, value: props.pka.value, status: props.pka.status, ionizable: props.pka.ionizable, confidence: props.pka.confidence } : undefined,
+                solubility: props.solubility ? { value_mg_ml: props.solubility.value, value: props.solubility.value, status: props.solubility.status, confidence: props.solubility.confidence } : undefined,
+                tpsa: props.tpsa ? { value: props.tpsa.value, status: props.tpsa.status, confidence: props.tpsa.confidence } : undefined,
+                bioavailability: props.bioavailability ? { score: props.bioavailability.value / 100, value: props.bioavailability.value, status: props.bioavailability.status, confidence: props.bioavailability.confidence } : undefined,
                 toxicity: {
                     herg_inhibition: { risk: props.toxicity?.value || "Low", probability: (tox.herg_inhibition || 0) / 100 },
                     ames_mutagenicity: { probability: (tox.ames_mutagenicity || 0) / 100 },
                     hepatotoxicity: { probability: (tox.hepatotoxicity || 0) / 100 },
                     value: props.toxicity?.value || "Low",
-                    confidence: 0.87,
+                    status: props.toxicity?.status,
+                    confidence: props.toxicity?.confidence,
                 },
             };
 

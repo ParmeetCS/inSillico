@@ -1,0 +1,48 @@
+{
+  "property": "toxicity",
+  "model_name": "xgboost",
+  "model_class": "XGBoostQSPR",
+  "task": "classification",
+  "model_version": "2.0.0",
+  "descriptor_version": "ecfp4_2048_v2",
+  "trained_at": "2026-02-18 16:23:42 UTC",
+  "metrics": {
+    "accuracy": 0.9777,
+    "f1": 0.2222,
+    "precision": 0.25,
+    "recall": 0.2,
+    "roc_auc": 0.7663,
+    "confusion_matrix": [
+      [
+        306,
+        3
+      ],
+      [
+        4,
+        1
+      ]
+    ]
+  },
+  "dataset_stats": {
+    "n_samples": 1461,
+    "task_type": "classification",
+    "class_distribution": {
+      "0": 1358,
+      "1": 103
+    },
+    "class_balance": 0.07584683357879234
+  },
+  "hyperparameters": {
+    "n_estimators": 100,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "random_state": 42,
+    "verbosity": 0,
+    "n_jobs": -1
+  },
+  "n_features": 2056
+}

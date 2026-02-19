@@ -1,0 +1,29 @@
+{
+  "property": "bbbp",
+  "type": "WeightedEnsemble",
+  "model_version": "2.0.0",
+  "weights": {
+    "random_forest": 0.49796787304044904,
+    "xgboost": 0.502032126959551
+  },
+  "metrics": {
+    "accuracy": 0.82,
+    "f1": 0.8986,
+    "precision": 0.8439,
+    "recall": 0.9608,
+    "roc_auc": 0.7792,
+    "confusion_matrix": [
+      [
+        9,
+        59
+      ],
+      [
+        13,
+        319
+      ]
+    ],
+    "mean_uncertainty": 0.0562670667590218,
+    "mean_confidence": 0.7586291550624767
+  },
+  "saved_at": "2026-02-18 16:25:23 UTC"
+}

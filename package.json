@@ -6,6 +6,11 @@
     "dev": "next dev",
     "dev:all": "concurrently \"next dev\" \"python ml/server.py\"",
     "ml": "python ml/server.py",
+    "ml:legacy": "python ml/server_v1_legacy.py",
+    "ml:train": "python ml/train_qspr.py",
+    "ml:train:tune": "python ml/train_qspr.py --tune",
+    "ml:train:quick": "python ml/train_qspr.py --quick",
+    "ml:evaluate": "python ml/evaluate_qspr.py",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

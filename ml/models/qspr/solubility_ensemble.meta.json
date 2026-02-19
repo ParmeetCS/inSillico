@@ -1,0 +1,17 @@
+{
+  "property": "solubility",
+  "type": "WeightedEnsemble",
+  "model_version": "2.0.0",
+  "weights": {
+    "random_forest": 0.405253004896869,
+    "xgboost": 0.5947469951031311
+  },
+  "metrics": {
+    "r2": 0.7534,
+    "rmse": 0.9223,
+    "mae": 0.6557,
+    "mean_uncertainty": 0.762250964217268,
+    "mean_confidence": 0.6415948040046693
+  },
+  "saved_at": "2026-02-18 16:19:07 UTC"
+}

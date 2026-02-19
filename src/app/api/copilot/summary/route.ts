@@ -1,21 +1,19 @@
 /**
- * AI Summary endpoint — generates concise AI analysis for a single compound
- *
+ * AI Summary — Cerebras AI Compound Analysis
+ * =============================================
+ * 
  * POST /api/copilot/summary
  * Body: { name, smiles, properties, toxicity }
- *
- * Returns { summary: string } — a short AI-generated insight for the compound card.
- * Uses OpenRouter API (google/gemma-3-27b-it:free).
+ * Returns: { summary: string }
+ * 
+ * Generates a concise 2-3 sentence AI analysis for a compound card.
+ * Engine: Cerebras AI
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { getCerebrasClient } from "@/lib/cerebras-client";
 
-const OPENROUTER_API_KEY = process.env.GEMINI_API_KEY || "";
-const OPENROUTER_MODEL = process.env.GEMINI_MODEL || "google/gemma-3-27b-it:free";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-
-const SYSTEM_PROMPT = `You are InSilico Copilot — a concise pharmaceutical AI analyst. 
-Given a molecule's predicted properties, produce a SHORT 2-3 sentence analysis covering:
+const SYSTEM_PROMPT = `You are InSilico Lab's AI analyst. Given a molecule's predicted properties, produce a SHORT 2-3 sentence analysis covering:
 1. Key strengths of this compound
 2. Primary concern or risk (if any)
 3. One actionable recommendation
@@ -31,9 +29,11 @@ Rules:
 
 export async function POST(req: NextRequest) {
     try {
-        if (!OPENROUTER_API_KEY) {
+        const cerebras = getCerebrasClient();
+
+        if (!cerebras.isConfigured()) {
             return NextResponse.json(
-                { error: "OpenRouter API key not configured" },
+                { error: "Cerebras API key not configured" },
                 { status: 500 }
             );
         }
@@ -55,69 +55,29 @@ Toxicity Screening: hERG=${toxicity?.herg || 0}%, Ames=${toxicity?.ames || 0}%, 
 
 Give a 2-3 sentence analysis.`;
 
-        const requestBody = JSON.stringify({
-            model: OPENROUTER_MODEL,
+        const response = await cerebras.chatCompletion({
             messages: [
-                { role: "user", content: `[System Instructions]\n${SYSTEM_PROMPT}\n[End System Instructions]\n\n${prompt}` },
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: prompt },
             ],
             temperature: 0.5,
             top_p: 0.85,
             max_tokens: 200,
         });
 
-        const requestHeaders = {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-            "HTTP-Referer": "https://insilico-formulator.vercel.app",
-            "X-Title": "InSilico Formulator",
-        };
+        const summary = response.choices[0]?.message?.content;
 
-        // Retry up to 2 times for transient free-tier provider errors
-        let lastError = "";
-        for (let attempt = 0; attempt < 3; attempt++) {
-            if (attempt > 0) {
-                await new Promise(r => setTimeout(r, 1500 * attempt));
-            }
-
-            const response = await fetch(OPENROUTER_URL, {
-                method: "POST",
-                headers: requestHeaders,
-                body: requestBody,
-            });
-
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                lastError = err.error?.message || "Provider error";
-                console.error(`OpenRouter summary error (attempt ${attempt + 1}):`, err);
-                if (response.status === 429 || response.status >= 500) continue;
-                return NextResponse.json(
-                    { error: "Failed to generate summary" },
-                    { status: response.status }
-                );
-            }
-
-            const data = await response.json();
-
-            if (data.error) {
-                lastError = data.error.message || "Provider error";
-                continue;
-            }
-
-            const summary = data.choices?.[0]?.message?.content;
-            if (summary) {
-                return NextResponse.json({ summary });
-            }
-
-            lastError = "Empty response";
-            continue;
+        if (!summary) {
+            return NextResponse.json(
+                { error: "Empty response from AI" },
+                { status: 502 }
+            );
         }
 
-        return NextResponse.json(
-            { error: lastError || "Failed to generate summary after retries" },
-            { status: 502 }
-        );
+        return NextResponse.json({ summary });
+
     } catch (error) {
-        console.error("Summary error:", error);
+        console.error("[Summary] Error:", error);
         return NextResponse.json(
             { error: "Internal server error" },
             { status: 500 }

@@ -2,15 +2,15 @@
  * Next.js API Route — Proxy to ML Prediction Server
  * 
  * POST /api/predict
- * Body: { smiles: string, model_type?: "xgboost" | "decision_tree" }
+ * Body: { smiles: string, model_type?: "xgboost" | "random_forest" }
  * 
  * Forwards predictions from the Python Flask ML backend (port 5001)
- * running XGBoost and Decision Tree models trained on MoleculeNet data.
+ * running QSPR v2.0 Ensemble (RandomForest + XGBoost, Morgan FP ECFP4).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
-const ML_SERVER_URL = process.env.ML_SERVER_URL || "http://localhost:5001";
+const ML_SERVER_URL = process.env.ML_BACKEND_URL || "http://localhost:5001";
 
 export async function POST(req: NextRequest) {
     try {

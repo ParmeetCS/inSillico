@@ -1,196 +1,157 @@
 /**
- * AI Drug Discovery Copilot — API Route
- *
+ * AI Drug Discovery Copilot — Cerebras AI + RAG + Function Calling
+ * ==================================================================
+ * 
  * POST /api/copilot
- * Body: { messages: { role: "user" | "assistant", content: string }[], userId?: string }
- *
- * Uses OpenRouter API (google/gemma-3-27b-it:free) with pharmaceutical domain expertise.
- * Fetches user's simulation results from Supabase for context-aware answers.
+ * Body: {
+ *   messages: { role: "user" | "assistant", content: string }[],
+ *   userId?: string,
+ *   voiceMode?: boolean,
+ *   stream?: boolean,
+ *   projectId?: string
+ * }
+ * 
+ * Architecture:
+ *   1. Retrieve user context from Supabase (RAG)
+ *   2. Build system prompt with persona + context
+ *   3. Send to Cerebras AI with tool definitions
+ *   4. Handle tool calls (predictions, descriptors, drug-likeness)
+ *   5. Return final response (streaming or non-streaming)
+ * 
+ * Engine: Cerebras AI (llama3.1-8b)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getCerebrasClient, type CerebrasMessage, type CerebrasStreamChunk } from "@/lib/cerebras-client";
+import { retrieveUserContext, formatContextForPrompt } from "@/lib/rag-context";
+import { TOOL_DEFINITIONS, executeToolCall } from "@/lib/tool-definitions";
 
-const OPENROUTER_API_KEY = process.env.GEMINI_API_KEY || "";
-const OPENROUTER_MODEL = process.env.GEMINI_MODEL || "google/gemma-3-27b-it:free";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+/* ─── System Prompt ─── */
 
-const SYSTEM_PROMPT_BASE = `You are InSilico Copilot — an elite AI Drug Discovery Scientist embedded in the InSilico Formulator platform. You don't just recall facts — you THINK, REASON, and ANALYZE like a senior medicinal chemist.
+const SYSTEM_PROMPT = `You are the AI Research Assistant for the InSilico Lab — an advanced in-silico drug discovery platform. You have access to molecular descriptors, QSPR prediction models, and the user's full project context.
 
-## Your Expertise
-- Medicinal chemistry & SAR (Structure–Activity Relationships)
+## Core Competencies
+- Medicinal chemistry, SAR (Structure–Activity Relationships), and lead optimization
 - ADMET properties (Absorption, Distribution, Metabolism, Excretion, Toxicity)
-- Lipinski's Rule of Five, Veber rules, Ghose filter & drug-likeness
-- Physicochemical properties: LogP, pKa, TPSA, solubility, molecular weight, bioavailability
-- Molecular descriptors & SMILES notation
-- Toxicity screening (hERG, Ames, hepatotoxicity, ClinTox)
-- Lead optimization & hit-to-lead strategies
-- Formulation science & drug delivery
-- PK/PD modeling fundamentals
+- Physicochemical property analysis: LogP, pKa, TPSA, solubility, molecular weight, bioavailability
+- Lipinski Rule of Five, Veber rules, Ghose filter, drug-likeness assessment
+- Toxicity screening: hERG inhibition, Ames mutagenicity, hepatotoxicity, ClinTox
+- SMILES notation interpretation and molecular structure analysis
+- Formulation science and drug delivery considerations
 
-## Thinking & Reasoning Approach
-1. **Understand Intent**: Before answering, deeply consider what the user truly needs — not just what they literally asked. A question about "LogP" might really be about bioavailability concerns.
-2. **Analyze, Don't Recite**: When given user data (compounds, predictions, properties), perform real analysis:
-   - Identify patterns, red flags, and opportunities
-   - Compare against known drug benchmarks and therapeutic area norms
-   - Spot structure-property relationships
-   - Flag ADMET risks before the user discovers them the hard way
-3. **Provide Actionable Insight**: Every response should answer "so what?" and "what should I do next?"
-4. **Connect the Dots**: Relate the user's current query to their broader project. If they've been working on solubility, and now ask about toxicity, recognize the lead optimization arc.
-5. **Anticipate Needs**: Proactively surface risks, suggest experiments, and propose alternatives.
+## Reasoning Protocol
+1. UNDERSTAND the user's true intent — a question about LogP may really be about absorption concerns
+2. ANALYZE data quantitatively — cite specific descriptor values, confidence scores, thresholds
+3. IDENTIFY risks proactively — flag ADMET liabilities, Lipinski violations, PAINS alerts
+4. RECOMMEND actionable next steps — suggest structural modifications with mechanistic rationale
+5. CONNECT findings to the user's broader research program when their project data is available
 
-## Response Guidelines
-- Be scientifically accurate — cite mechanistic reasoning, not just rules.
-- When suggesting modifications, explain the WHY: "Adding a hydroxyl at C-4 boosts aqueous solubility (+2 HBD) but monitor for glucuronidation liability."
-- Use SMILES notation when referencing structures.
-- If you're unsure, say so — **never fabricate safety or toxicity data**.
-- Proactively suggest next steps and warn about common pitfalls.
-- When data is available, draw conclusions and make recommendations — don't just repeat numbers back.
+## Tool Usage
+You have access to computational tools. Use them when the user:
+- Asks you to predict properties for a molecule (use run_prediction)
+- Asks about molecular descriptors or features (use get_descriptors)
+- Asks about drug-likeness assessment (use get_drug_likeness)
+- Wants to compare two molecules (use compare_molecules)
+- Asks for exact, measured, or experimental values from training data (use query_qspr_dataset)
+- Wants to know if a molecule is in the QSPR dataset (use query_qspr_dataset)
 
-## User Data Analysis Protocol
-When the user's compound/simulation data is provided:
-- Rank compounds by drug-likeness and flag the best candidates
-- Identify the most concerning ADMET liabilities
-- Suggest structural analogs that might resolve issues
-- Compare properties against therapeutic area benchmarks
-- Note trends across the compound series
+When reporting tool results:
+- Present key findings first, then supporting detail
+- Highlight any concerning values (red flags)
+- Compare against known drug benchmarks
+- Suggest structural improvements where relevant
 
-You have access to the user's compound library and simulation results from the InSilico platform.`;
+## Scientific Standards
+- Be accurate — cite mechanistic reasoning, not just rules
+- When suggesting modifications: explain WHY ("Adding -OH at C-4 improves aqueous solubility via +1 HBD, but monitor for glucuronidation liability")
+- Use SMILES notation for structures when helpful
+- NEVER fabricate safety or toxicity data
+- If uncertain, state your confidence level explicitly
+
+## QSPR Training Data
+You have access to the experimentally measured QSPR training datasets via the query_qspr_dataset tool:
+  - Solubility: ESOL dataset — measured log solubility (logS mol/L), ~1128 compounds
+  - Lipophilicity: MoleculeNet — experimental logD at pH 7.4, ~4200 compounds
+  - BBB Penetration: BBBP dataset — binary blood-brain barrier permeability, ~2039 compounds
+  - Clinical Toxicity: ClinTox — binary clinical trial toxicity, ~1478 compounds
+When reporting measured values, clearly distinguish them from ML predictions.
+
+## Tone
+- Professional and scientifically precise
+- Concise but thorough — pharmaceutical scientists are busy
+- Not casual, not over-confident
+- Reference descriptor values numerically when data is available`;
 
 const VOICE_MODE_ADDENDUM = `
 
 ## Voice Response Mode
-You are responding via voice (text-to-speech). Adjust your output:
-- Use natural, conversational language — as if explaining to a colleague at a whiteboard
-- Keep responses concise (3-6 sentences for simple queries, up to 10 for complex analysis)
-- Avoid markdown tables, bullet lists, or formatting symbols — they don't work in speech
-- Spell out abbreviations the first time (e.g., "topological polar surface area, or TPSA")
-- Use verbal transitions: "The key insight here is...", "What's interesting about this compound is..."
-- For SMILES, say "the structure" or describe it verbally instead of reading SMILES characters
-- Pause-worthy structure: present the most important finding first, then supporting details
+You are responding via voice synthesis. Adjust output for speech:
+- Use natural, conversational language — like explaining to a colleague at a whiteboard
+- Keep responses concise: 3-6 sentences for simple queries, up to 10 for complex analysis
+- NEVER use markdown formatting (tables, bullets, headers, code blocks) — they break in speech
+- Spell out abbreviations first time: "topological polar surface area, or TPSA"
+- Use verbal transitions: "The key insight here is...", "What stands out about this compound..."
+- For SMILES, describe the structure verbally instead of reading SMILES characters
+- Structure: most important finding first, then supporting details
 - End with a clear, actionable suggestion`;
 
-async function fetchUserContext(userId: string): Promise<string> {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const TEXT_MODE_ADDENDUM = `
 
-    if (!supabaseUrl || !supabaseKey) return "No user data available.";
+## Formatting Guidelines
+- Use markdown: headers, bold, code blocks for SMILES, bullet lists
+- Use tables when comparing multiple compounds
+- Keep formatting clean and scannable`;
 
-    try {
-        const supabase = createClient(supabaseUrl, supabaseKey);
+/* ─── Streaming Response Helpers ─── */
 
-        // Fetch user's molecules
-        const { data: molecules } = await supabase
-            .from("molecules")
-            .select("id, name, smiles, formula, molecular_weight, created_at")
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false })
-            .limit(30);
+function createSSEStream(cerebrasStream: AsyncGenerator<CerebrasStreamChunk>): ReadableStream {
+    return new ReadableStream({
+        async start(controller) {
+            const encoder = new TextEncoder();
+            try {
+                for await (const chunk of cerebrasStream) {
+                    const content = chunk.choices?.[0]?.delta?.content;
+                    if (content) {
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+                    }
 
-        // Fetch recent simulations with molecule data
-        const { data: sims } = await supabase
-            .from("simulations")
-            .select("id, status, config_json, result_json, compute_cost, created_at, molecule:molecules(name, smiles, formula, molecular_weight)")
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false })
-            .limit(20);
-
-        // Fetch prediction results if table exists
-        let predictions: Record<string, unknown>[] | null = null;
-        try {
-            const { data } = await supabase
-                .from("prediction_results")
-                .select("*")
-                .eq("user_id", userId)
-                .order("created_at", { ascending: false })
-                .limit(20);
-            predictions = data;
-        } catch {
-            // Table may not exist
-        }
-
-        // Fetch user's projects for broader context
-        let projects: Record<string, unknown>[] | null = null;
-        try {
-            const { data } = await supabase
-                .from("projects")
-                .select("id, name, description, created_at")
-                .eq("user_id", userId)
-                .order("created_at", { ascending: false })
-                .limit(10);
-            projects = data;
-        } catch {
-            // Table may not exist
-        }
-
-        let context = "## User's Research Profile & Data\n\n";
-
-        // Projects context
-        if (projects && projects.length > 0) {
-            context += "### Active Projects:\n";
-            for (const proj of projects) {
-                context += `- **${proj.name}**: ${proj.description || "No description"}\n`;
-            }
-            context += "\n";
-        }
-
-        // Molecule library
-        if (molecules && molecules.length > 0) {
-            context += `### Compound Library (${molecules.length} total):\n`;
-            for (const mol of molecules) {
-                context += `- **${mol.name}** | SMILES: \`${mol.smiles}\` | MW: ${mol.molecular_weight || "N/A"} | Formula: ${mol.formula || "N/A"}\n`;
-            }
-            context += "\n";
-        }
-
-        // Simulations with results
-        if (sims && sims.length > 0) {
-            context += "### Recent Simulations & Results:\n";
-            for (const sim of sims) {
-                const mol = sim.molecule as unknown as { name: string; smiles: string; formula: string; molecular_weight: number } | null;
-                context += `- **${mol?.name || "Unknown"}** (SMILES: \`${mol?.smiles || "N/A"}\`, MW: ${mol?.molecular_weight || "N/A"}) — Status: ${sim.status}`;
-                if (sim.result_json) {
-                    const results = sim.result_json as Record<string, unknown>;
-                    // Extract key properties for cleaner context
-                    const keyProps = ["logP", "solubility", "toxicity", "bioavailability", "pKa", "tpsa", "hbd", "hba"]
-                        .filter(k => k in results)
-                        .map(k => `${k}: ${results[k]}`)
-                        .join(", ");
-                    context += ` — Properties: ${keyProps || JSON.stringify(results)}`;
+                    if (chunk.choices?.[0]?.finish_reason === "tool_calls") {
+                        controller.enqueue(
+                            encoder.encode(`data: ${JSON.stringify({ tool_call: true })}\n\n`)
+                        );
+                    }
                 }
-                context += "\n";
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : "Stream error";
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
+            } finally {
+                controller.close();
             }
-        } else {
-            context += "No simulations completed yet.\n";
-        }
-
-        if (predictions && predictions.length > 0) {
-            context += "\n### ML Prediction Results:\n";
-            for (const pred of predictions) {
-                context += `- SMILES: \`${pred.smiles}\` | Model: ${pred.model_type} | Predictions: ${JSON.stringify(pred.predictions)}\n`;
-            }
-            // Add analytical summary
-            context += "\n*Analytical Note: Cross-reference predictions with simulation results for validation. Flag any discrepancies between ML predictions and physics-based simulations.*\n";
-        }
-
-        return context;
-    } catch (error) {
-        console.error("Error fetching user context:", error);
-        return "Could not fetch user data.";
-    }
+        },
+    });
 }
+
+/* ─── Main Handler ─── */
 
 export async function POST(req: NextRequest) {
     try {
-        if (!OPENROUTER_API_KEY) {
+        const cerebras = getCerebrasClient();
+
+        if (!cerebras.isConfigured()) {
             return NextResponse.json(
-                { error: "OpenRouter API key not configured. Add GEMINI_API_KEY to your .env.local file." },
+                { error: "Cerebras API key not configured. Add CEREBRAS_API_KEY to .env.local" },
                 { status: 500 }
             );
         }
 
         const body = await req.json();
-        const { messages, userId, voiceMode } = body;
+        const {
+            messages,
+            userId,
+            voiceMode = false,
+            stream = false,
+        } = body;
 
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
             return NextResponse.json(
@@ -199,105 +160,89 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Fetch user's compound library for context
-        let userContext = "";
+        // ── Step 1: Retrieve user context (RAG) ──
+        let contextBlock = "";
         if (userId) {
-            userContext = await fetchUserContext(userId);
+            try {
+                const userContext = await retrieveUserContext(userId);
+                contextBlock = formatContextForPrompt(userContext);
+            } catch (e) {
+                console.error("[Copilot] RAG context error:", e);
+                contextBlock = "User context could not be retrieved.";
+            }
         }
 
-        // Build system prompt — add voice mode addendum if voice assistant is sending
-        const basePrompt = SYSTEM_PROMPT_BASE + (voiceMode ? VOICE_MODE_ADDENDUM : `\n\n## Formatting\n- Use markdown: headers, bullets, bold, code blocks for SMILES.\n- Use tables when comparing compounds.\n- Keep responses concise but thorough — pharma scientists are busy.`);
-        const systemContent = basePrompt + (userContext ? `\n\n---\n\n${userContext}` : "");
+        // ── Step 2: Build system prompt ──
+        const modeAddendum = voiceMode ? VOICE_MODE_ADDENDUM : TEXT_MODE_ADDENDUM;
+        const systemPrompt = [
+            SYSTEM_PROMPT,
+            modeAddendum,
+            contextBlock ? `\n---\n\n${contextBlock}` : "",
+        ].join("");
 
-        // Gemma 3 does not support "system" role — inject into first user message
-        const userMessages = messages.map((msg: { role: string; content: string }) => ({
-            role: msg.role,
-            content: msg.content,
-        }));
+        // ── Step 3: Build message array ──
+        const cerebrasMessages: CerebrasMessage[] = [
+            { role: "system", content: systemPrompt },
+            ...messages.map((m: { role: string; content: string }) => ({
+                role: m.role as "user" | "assistant",
+                content: m.content,
+            })),
+        ];
 
-        // Prepend system prompt to the first user message
-        if (userMessages.length > 0 && userMessages[0].role === "user") {
-            userMessages[0] = {
-                role: "user",
-                content: `[System Instructions]\n${systemContent}\n[End System Instructions]\n\n${userMessages[0].content}`,
-            };
-        } else {
-            userMessages.unshift({
-                role: "user",
-                content: `[System Instructions]\n${systemContent}\n[End System Instructions]\n\nHello, I need your help with drug discovery.`,
+        // ── Step 4: Streaming mode ──
+        if (stream) {
+            const streamGen = cerebras.chatCompletionStream({
+                messages: cerebrasMessages,
+                temperature: 0.7,
+                top_p: 0.9,
+                max_tokens: 2048,
+            });
+
+            return new Response(createSSEStream(streamGen), {
+                headers: {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
             });
         }
 
-        const openRouterMessages = userMessages;
+        // ── Step 5: Non-streaming with tool calling ──
+        const { response, toolResults } = await cerebras.chatWithTools(
+            {
+                messages: cerebrasMessages,
+                tools: TOOL_DEFINITIONS,
+                tool_choice: "auto",
+                temperature: 0.7,
+                top_p: 0.9,
+                max_tokens: 2048,
+            },
+            executeToolCall
+        );
 
-        const requestBody = JSON.stringify({
-            model: OPENROUTER_MODEL,
-            messages: openRouterMessages,
-            temperature: 0.7,
-            top_p: 0.9,
-            max_tokens: 2048,
+        const reply = response.choices[0]?.message?.content;
+
+        if (!reply) {
+            return NextResponse.json(
+                { error: "Empty response from AI" },
+                { status: 502 }
+            );
+        }
+
+        return NextResponse.json({
+            reply,
+            model: response.model,
+            usage: response.usage,
+            time_info: response.time_info,
+            tools_used: toolResults.length > 0
+                ? toolResults.map(t => t.name)
+                : undefined,
         });
 
-        const requestHeaders = {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-            "HTTP-Referer": "https://insilico-formulator.vercel.app",
-            "X-Title": "InSilico Formulator",
-        };
-
-        // Retry up to 2 times for transient free-tier provider errors
-        let lastError = "";
-        for (let attempt = 0; attempt < 3; attempt++) {
-            if (attempt > 0) {
-                await new Promise(r => setTimeout(r, 1500 * attempt));
-            }
-
-            const response = await fetch(OPENROUTER_URL, {
-                method: "POST",
-                headers: requestHeaders,
-                body: requestBody,
-            });
-
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({ error: "OpenRouter API error" }));
-                lastError = err.error?.message || "Provider returned error";
-                console.error(`OpenRouter error (attempt ${attempt + 1}):`, JSON.stringify(err));
-                if (response.status === 429 || response.status >= 500) continue; // retryable
-                return NextResponse.json(
-                    { error: lastError },
-                    { status: response.status }
-                );
-            }
-
-            const data = await response.json();
-
-            // Check for provider error inside a 200 response
-            if (data.error) {
-                lastError = data.error.message || "Provider error";
-                console.error(`OpenRouter provider error (attempt ${attempt + 1}):`, data.error);
-                continue;
-            }
-
-            const reply = data.choices?.[0]?.message?.content;
-            if (reply) {
-                return NextResponse.json({ reply });
-            }
-
-            lastError = "Empty response from AI";
-            continue;
-        }
-
-        // All retries failed
-        return NextResponse.json(
-            { error: lastError || "Failed to get response after retries. Please try again." },
-            { status: 502 }
-        );
-
     } catch (error) {
-        console.error("Copilot error:", error);
-        return NextResponse.json(
-            { error: "Internal server error" },
-            { status: 500 }
-        );
+        console.error("[Copilot] Error:", error);
+        const message = error instanceof Error ? error.message : "Internal server error";
+        const status = (error as { status?: number })?.status || 500;
+        return NextResponse.json({ error: message }, { status });
     }
 }

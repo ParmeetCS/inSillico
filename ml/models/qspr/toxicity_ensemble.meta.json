@@ -1,0 +1,29 @@
+{
+  "property": "toxicity",
+  "type": "WeightedEnsemble",
+  "model_version": "2.0.0",
+  "weights": {
+    "random_forest": 0.4722815233110667,
+    "xgboost": 0.5277184766889332
+  },
+  "metrics": {
+    "accuracy": 0.9841,
+    "f1": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "roc_auc": 0.7492,
+    "confusion_matrix": [
+      [
+        309,
+        0
+      ],
+      [
+        5,
+        0
+      ]
+    ],
+    "mean_uncertainty": 0.024015322468118577,
+    "mean_confidence": 0.9260298157580108
+  },
+  "saved_at": "2026-02-18 16:23:42 UTC"
+}

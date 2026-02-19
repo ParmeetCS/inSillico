@@ -1,0 +1,33 @@
+{
+  "property": "logp",
+  "model_name": "random_forest",
+  "model_class": "RandomForestQSPR",
+  "task": "regression",
+  "model_version": "2.0.0",
+  "descriptor_version": "ecfp4_2048_v2",
+  "trained_at": "2026-02-18 16:19:56 UTC",
+  "metrics": {
+    "r2": 0.3495,
+    "rmse": 1.0805,
+    "mae": 0.8453
+  },
+  "dataset_stats": {
+    "n_samples": 4200,
+    "task_type": "regression",
+    "target_mean": 2.1863357142857143,
+    "target_std": 1.2028604901336188,
+    "target_min": -1.5,
+    "target_max": 4.5,
+    "target_median": 2.36
+  },
+  "hyperparameters": {
+    "n_estimators": 100,
+    "max_depth": null,
+    "min_samples_split": 5,
+    "min_samples_leaf": 2,
+    "max_features": "sqrt",
+    "n_jobs": -1,
+    "random_state": 42
+  },
+  "n_features": 2056
+}

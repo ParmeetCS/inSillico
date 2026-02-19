@@ -20,7 +20,7 @@ import { toast } from "@/components/ui/toast";
 import MoleculeDrawer from "@/components/molecule-drawer";
 
 export default function MoleculeInputPage() {
-    const { user } = useAuth();
+    const { user, session } = useAuth();
     const router = useRouter();
     const supabase = createClient();
 
@@ -34,6 +34,77 @@ export default function MoleculeInputPage() {
     const [formula, setFormula] = useState("");
     const [molecularWeight, setMolecularWeight] = useState("");
     const [loading, setLoading] = useState(false);
+
+    /* ── Core save logic (separated for timeout wrapper) ── */
+    const doSave = async (session: { user: { id: string } }) => {
+        const uid = session.user.id;
+
+        // 1. Ensure we have a project
+        let projectId: string;
+        console.log("[save] fetching projects...");
+        const { data: projects, error: projFetchErr } = await supabase
+            .from("projects").select("id").eq("user_id", uid).limit(1);
+
+        if (projFetchErr) throw new Error("Failed to fetch projects: " + projFetchErr.message);
+        console.log("[save] projects found:", projects?.length);
+
+        if (projects && projects.length > 0) {
+            projectId = projects[0].id;
+        } else {
+            console.log("[save] creating default project...");
+            const { data: newProject, error: projCreateErr } = await supabase
+                .from("projects")
+                .insert({ user_id: uid, name: "My First Project", description: "Default project" })
+                .select("id")
+                .single();
+            if (projCreateErr || !newProject) throw new Error("Failed to create project: " + (projCreateErr?.message ?? "Unknown error"));
+            projectId = newProject.id;
+        }
+        console.log("[save] projectId:", projectId);
+
+        // 2. Check for existing molecule with same SMILES
+        console.log("[save] checking for duplicate SMILES...");
+        const { data: existingMols } = await supabase
+            .from("molecules")
+            .select("id")
+            .eq("user_id", uid)
+            .eq("smiles", smiles.trim())
+            .limit(1);
+
+        let moleculeId: string;
+
+        if (existingMols && existingMols.length > 0) {
+            moleculeId = existingMols[0].id;
+            console.log("[save] reusing existing molecule:", moleculeId);
+            haptic("success");
+            toast("Molecule already in your library — proceeding to simulation.", "info");
+        } else {
+            // 3. Create the molecule
+            console.log("[save] inserting molecule...");
+            const { data: molecule, error: molErr } = await supabase
+                .from("molecules")
+                .insert({
+                    project_id: projectId,
+                    user_id: uid,
+                    name: name.trim() || `Compound-${Date.now().toString(36).slice(-4).toUpperCase()}`,
+                    smiles: smiles.trim(),
+                    formula: formula.trim() || null,
+                    molecular_weight: molecularWeight ? parseFloat(molecularWeight) : null,
+                })
+                .select("id")
+                .single();
+
+            if (molErr || !molecule) {
+                throw new Error(`Molecule save failed: ${molErr?.message ?? "Unknown error"}`);
+            }
+            moleculeId = molecule.id;
+            console.log("[save] molecule created:", moleculeId);
+        }
+
+        haptic("success");
+        toast("Molecule saved! Configure your simulation.", "success");
+        router.push(`/simulations/new?molecule=${moleculeId}&project=${projectId}`);
+    };
 
     const handleProceed = async () => {
         if (!smiles.trim()) {
@@ -50,80 +121,34 @@ export default function MoleculeInputPage() {
         setLoading(true);
 
         try {
-            // Refresh session first to ensure valid token
-            console.log("[save] refreshing session...");
-            const { data: { session }, error: sessErr } = await supabase.auth.getSession();
-            if (sessErr || !session) {
-                throw new Error("Session expired — please log in again.");
-            }
-            console.log("[save] session OK, uid:", session.user.id);
+            // Use existing session from auth context (already authenticated)
+            let activeSession = session;
 
-            // 1. Ensure we have a project
-            let projectId: string;
-            console.log("[save] fetching projects...");
-            const { data: projects, error: projFetchErr } = await supabase
-                .from("projects").select("id").eq("user_id", session.user.id).limit(1);
-
-            if (projFetchErr) throw new Error("Failed to fetch projects: " + projFetchErr.message);
-            console.log("[save] projects found:", projects?.length);
-
-            if (projects && projects.length > 0) {
-                projectId = projects[0].id;
-            } else {
-                console.log("[save] creating default project...");
-                const { data: newProject, error: projCreateErr } = await supabase
-                    .from("projects")
-                    .insert({ user_id: session.user.id, name: "My First Project", description: "Default project" })
-                    .select("id")
-                    .single();
-                if (projCreateErr || !newProject) throw new Error("Failed to create project: " + (projCreateErr?.message ?? "Unknown error"));
-                projectId = newProject.id;
-            }
-            console.log("[save] projectId:", projectId);
-
-            // 2. Check for existing molecule with same SMILES (prevent duplicates)
-            console.log("[save] checking for duplicate SMILES...");
-            const { data: existingMols } = await supabase
-                .from("molecules")
-                .select("id")
-                .eq("user_id", session.user.id)
-                .eq("smiles", smiles.trim())
-                .limit(1);
-
-            let moleculeId: string;
-
-            if (existingMols && existingMols.length > 0) {
-                // Reuse existing molecule instead of creating a duplicate
-                moleculeId = existingMols[0].id;
-                console.log("[save] reusing existing molecule:", moleculeId);
-                haptic("success");
-                toast("Molecule already in your library — proceeding to simulation.", "info");
-            } else {
-                // 3. Create the molecule
-                console.log("[save] inserting molecule...");
-                const { data: molecule, error: molErr } = await supabase
-                    .from("molecules")
-                    .insert({
-                        project_id: projectId,
-                        user_id: session.user.id,
-                        name: name.trim() || `Compound-${Date.now().toString(36).slice(-4).toUpperCase()}`,
-                        smiles: smiles.trim(),
-                        formula: formula.trim() || null,
-                        molecular_weight: molecularWeight ? parseFloat(molecularWeight) : null,
-                    })
-                    .select("id")
-                    .single();
-
-                if (molErr || !molecule) {
-                    throw new Error(`Molecule save failed: ${molErr?.message ?? "Unknown error"}`);
+            if (!activeSession) {
+                // Fallback: try getSession with a real timeout
+                console.log("[save] no context session, fetching...");
+                const sessionResult = await Promise.race([
+                    supabase.auth.getSession(),
+                    new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error("Session fetch timed out")), 8000)
+                    ),
+                ]);
+                const { data: { session: fetched }, error: sessErr } = sessionResult;
+                if (sessErr || !fetched) {
+                    throw new Error("Session expired — please log in again.");
                 }
-                moleculeId = molecule.id;
-                console.log("[save] molecule created:", moleculeId);
+                activeSession = fetched;
             }
 
-            haptic("success");
-            toast("Molecule saved! Configure your simulation.", "success");
-            router.push(`/simulations/new?molecule=${moleculeId}&project=${projectId}`);
+            console.log("[save] uid:", activeSession.user.id);
+
+            // Run save with a real 15s timeout via Promise.race
+            await Promise.race([
+                doSave(activeSession),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Save timed out — please check your connection and try again.")), 15000)
+                ),
+            ]);
         } catch (err) {
             const msg = (err as Error).message || "Unknown error";
             console.error("Molecule save error:", msg, err);

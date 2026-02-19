@@ -33,17 +33,18 @@ interface SimulationResult {
     status: string;
     config_json: Record<string, unknown>;
     result_json: {
-        logp?: number;
-        pka?: number;
-        solubility?: number;
+        logp?: number | { value: number; confidence?: number };
+        pka?: number | { acidic?: number; basic?: number };
+        solubility?: number | { value_mg_ml?: number; class?: string; confidence?: number };
         tpsa?: number;
-        bioavailability?: number;
+        bioavailability?: number | { score?: number; class?: string };
         toxicity?: {
-            herg_inhibition?: number;
-            ames_mutagenicity?: number;
-            hepatotoxicity?: number;
-        };
+            herg_inhibition?: number | { risk?: string; probability?: number };
+            ames_mutagenicity?: number | { risk?: string; probability?: number };
+            hepatotoxicity?: number | { risk?: string; probability?: number };
+        } | Array<{ name: string; risk: string; probability: number }>;
         confidence?: number;
+        bbbp?: number | { prediction?: string; probability?: number; confidence?: number };
         [key: string]: unknown;
     } | null;
     compute_cost: number;

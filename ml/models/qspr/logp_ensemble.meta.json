@@ -1,0 +1,17 @@
+{
+  "property": "logp",
+  "type": "WeightedEnsemble",
+  "model_version": "2.0.0",
+  "weights": {
+    "random_forest": 0.38644405130473247,
+    "xgboost": 0.6135559486952676
+  },
+  "metrics": {
+    "r2": 0.501,
+    "rmse": 0.9464,
+    "mae": 0.7461,
+    "mean_uncertainty": 0.5100347659910673,
+    "mean_confidence": 0.5374897440095635
+  },
+  "saved_at": "2026-02-18 16:19:56 UTC"
+}

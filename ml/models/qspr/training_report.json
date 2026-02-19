@@ -1,0 +1,295 @@
+{
+  "pipeline_version": "2.0.0",
+  "trained_at": "2026-02-18 16:25:23 UTC",
+  "total_time_s": 26.86,
+  "descriptor": {
+    "type": "Morgan Fingerprint (ECFP4)",
+    "radius": 2,
+    "n_bits": 2048,
+    "use_physchem": true,
+    "n_features": 2056,
+    "version": "ecfp4_2048"
+  },
+  "split_method": "scaffold",
+  "cv_folds": 5,
+  "tuned": false,
+  "properties": {
+    "bbbp": {
+      "property": "bbbp",
+      "task": "classification",
+      "models": {
+        "random_forest": {
+          "accuracy": 0.835,
+          "f1": 0.9093,
+          "precision": 0.8359,
+          "recall": 0.997,
+          "roc_auc": 0.7719,
+          "confusion_matrix": [
+            [
+              3,
+              65
+            ],
+            [
+              1,
+              331
+            ]
+          ]
+        },
+        "xgboost": {
+          "accuracy": 0.8075,
+          "f1": 0.8842,
+          "precision": 0.8829,
+          "recall": 0.8855,
+          "roc_auc": 0.7782,
+          "confusion_matrix": [
+            [
+              29,
+              39
+            ],
+            [
+              38,
+              294
+            ]
+          ]
+        }
+      },
+      "ensemble": {
+        "accuracy": 0.82,
+        "f1": 0.8986,
+        "precision": 0.8439,
+        "recall": 0.9608,
+        "roc_auc": 0.7792,
+        "confusion_matrix": [
+          [
+            9,
+            59
+          ],
+          [
+            13,
+            319
+          ]
+        ],
+        "mean_uncertainty": 0.0562670667590218,
+        "mean_confidence": 0.7586291550624767
+      },
+      "cross_validation": {
+        "random_forest": {
+          "accuracy_mean": 0.8675,
+          "accuracy_std": 0.0288,
+          "f1_mean": 0.9184,
+          "f1_std": 0.0162,
+          "precision_mean": 0.8669,
+          "precision_std": 0.0321,
+          "recall_mean": 0.9774,
+          "recall_std": 0.0098,
+          "roc_auc_mean": 0.9008,
+          "roc_auc_std": 0.0346,
+          "n_folds": 5,
+          "total_time_s": 3.17,
+          "per_fold": [
+            {
+              "accuracy": 0.8182,
+              "f1": 0.89,
+              "precision": 0.8146,
+              "recall": 0.9807,
+              "roc_auc": 0.8451,
+              "confusion_matrix": [
+                [
+                  40,
+                  81
+                ],
+                [
+                  7,
+                  356
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.8606,
+              "f1": 0.9159,
+              "precision": 0.8658,
+              "recall": 0.9723,
+              "roc_auc": 0.8782,
+              "confusion_matrix": [
+                [
+                  42,
+                  49
+                ],
+                [
+                  9,
+                  316
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.879,
+              "f1": 0.9259,
+              "precision": 0.8669,
+              "recall": 0.9935,
+              "roc_auc": 0.9416,
+              "confusion_matrix": [
+                [
+                  50,
+                  47
+                ],
+                [
+                  2,
+                  306
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.8735,
+              "f1": 0.9208,
+              "precision": 0.8711,
+              "recall": 0.9766,
+              "roc_auc": 0.9206,
+              "confusion_matrix": [
+                [
+                  47,
+                  37
+                ],
+                [
+                  6,
+                  250
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.9061,
+              "f1": 0.9393,
+              "precision": 0.916,
+              "recall": 0.9639,
+              "roc_auc": 0.9184,
+              "confusion_matrix": [
+                [
+                  59,
+                  22
+                ],
+                [
+                  9,
+                  240
+                ]
+              ]
+            }
+          ]
+        },
+        "xgboost": {
+          "accuracy_mean": 0.8434,
+          "accuracy_std": 0.0063,
+          "f1_mean": 0.8952,
+          "f1_std": 0.0027,
+          "precision_mean": 0.9119,
+          "precision_std": 0.0187,
+          "recall_mean": 0.8797,
+          "recall_std": 0.017,
+          "roc_auc_mean": 0.8939,
+          "roc_auc_std": 0.0184,
+          "n_folds": 5,
+          "total_time_s": 5.23,
+          "per_fold": [
+            {
+              "accuracy": 0.8409,
+              "f1": 0.8955,
+              "precision": 0.8824,
+              "recall": 0.9091,
+              "roc_auc": 0.8724,
+              "confusion_matrix": [
+                [
+                  77,
+                  44
+                ],
+                [
+                  33,
+                  330
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.8341,
+              "f1": 0.8927,
+              "precision": 0.9025,
+              "recall": 0.8831,
+              "roc_auc": 0.8828,
+              "confusion_matrix": [
+                [
+                  60,
+                  31
+                ],
+                [
+                  38,
+                  287
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.8494,
+              "f1": 0.8988,
+              "precision": 0.9186,
+              "recall": 0.8799,
+              "roc_auc": 0.9148,
+              "confusion_matrix": [
+                [
+                  73,
+                  24
+                ],
+                [
+                  37,
+                  271
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.8412,
+              "f1": 0.8916,
+              "precision": 0.9174,
+              "recall": 0.8672,
+              "roc_auc": 0.8825,
+              "confusion_matrix": [
+                [
+                  64,
+                  20
+                ],
+                [
+                  34,
+                  222
+                ]
+              ]
+            },
+            {
+              "accuracy": 0.8515,
+              "f1": 0.8973,
+              "precision": 0.9386,
+              "recall": 0.8594,
+              "roc_auc": 0.9172,
+              "confusion_matrix": [
+                [
+                  67,
+                  14
+                ],
+                [
+                  35,
+                  214
+                ]
+              ]
+            }
+          ]
+        }
+      },
+      "best_model": {
+        "name": "xgboost",
+        "metric": "roc_auc",
+        "score": 0.7782
+      },
+      "training_time_s": 26.84,
+      "status": "success",
+      "n_samples": 1975,
+      "n_features": 2056,
+      "split": {
+        "method": "scaffold",
+        "train_size": 1575,
+        "test_size": 400
+      }
+    }
+  }
+}
