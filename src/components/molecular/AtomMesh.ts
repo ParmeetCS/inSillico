@@ -29,9 +29,10 @@ export class AtomMeshManager {
     this.glowGeometry = new THREE.SphereGeometry(1, 16, 16);
 
     this.material = new THREE.MeshStandardMaterial({
-      roughness: 0.3,
-      metalness: 0.1,
+      roughness: 0.25,
+      metalness: 0.15,
       vertexColors: true,
+      envMapIntensity: 1.2,
     });
 
     this.glowMaterial = new THREE.MeshBasicMaterial({

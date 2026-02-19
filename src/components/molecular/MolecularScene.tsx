@@ -134,7 +134,7 @@ const MolecularScene = forwardRef<MolecularSceneHandle, MolecularSceneProps>(
       directional.castShadow = true;
       scene.add(directional);
 
-      const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+      const fillLight = new THREE.DirectionalLight(0x888888, 0.5);
       fillLight.position.set(-5, -3, -5);
       scene.add(fillLight);
 
@@ -153,9 +153,9 @@ const MolecularScene = forwardRef<MolecularSceneHandle, MolecularSceneProps>(
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(w, h),
-        0.3,   // strength
-        0.4,   // radius
-        0.85   // threshold
+        0.15,  // strength (subtle on white)
+        0.3,   // radius
+        0.9    // threshold
       );
       composer.addPass(bloom);
       composerRef.current = composer;

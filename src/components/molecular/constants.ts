@@ -7,35 +7,35 @@ import * as THREE from "three";
 
 // --------------- Jmol Element Colors ----------------------------------------
 export const ELEMENT_COLORS: Record<string, string> = {
-  H:  "#FFFFFF",
-  He: "#D9FFFF",
-  Li: "#CC80FF",
-  Be: "#C2FF00",
-  B:  "#FFB5B5",
-  C:  "#909090",
-  N:  "#3050F8",
-  O:  "#FF0D0D",
-  F:  "#90E050",
-  Ne: "#B3E3F5",
-  Na: "#AB5CF2",
-  Mg: "#8AFF00",
-  Al: "#BFA6A6",
-  Si: "#F0C8A0",
-  P:  "#FF8000",
-  S:  "#FFFF30",
-  Cl: "#1FF01F",
-  Ar: "#80D1E3",
-  K:  "#8F40D4",
-  Ca: "#3DFF00",
-  Fe: "#E06633",
-  Cu: "#C88033",
-  Zn: "#7D80B0",
-  Br: "#A62929",
-  I:  "#940094",
-  Pt: "#D0D0E0",
-  Au: "#FFD123",
-  Pd: "#006985",
-  Ag: "#C0C0C0",
+  H:  "#666666",
+  He: "#7FC8D8",
+  Li: "#9B50E0",
+  Be: "#80B300",
+  B:  "#E08080",
+  C:  "#333333",
+  N:  "#2040D0",
+  O:  "#CC0000",
+  F:  "#50A030",
+  Ne: "#6CA8C8",
+  Na: "#7B30C0",
+  Mg: "#55AA00",
+  Al: "#8A7070",
+  Si: "#C09060",
+  P:  "#CC6600",
+  S:  "#C8C800",
+  Cl: "#10B010",
+  Ar: "#509898",
+  K:  "#6620A0",
+  Ca: "#28CC00",
+  Fe: "#B04020",
+  Cu: "#A06020",
+  Zn: "#505080",
+  Br: "#801818",
+  I:  "#6A006A",
+  Pt: "#909098",
+  Au: "#D4A800",
+  Pd: "#004560",
+  Ag: "#888888",
 };
 
 export function getElementColor(element: string): THREE.Color {
@@ -110,7 +110,7 @@ export const VDW_RADII: Record<string, number> = {
 };
 
 /** Ball-and-stick display radius scaling */
-export const BALL_STICK_SCALE = 0.35;
+export const BALL_STICK_SCALE = 0.45;
 /** Space-filling display radius scaling */
 export const SPACE_FILL_SCALE = 1.0;
 
@@ -128,16 +128,16 @@ export function getAtomRadius(
 }
 
 /** Bond cylinder radius */
-export const BOND_RADIUS = 0.08;
+export const BOND_RADIUS = 0.12;
 /** Double bond offset distance */
-export const DOUBLE_BOND_OFFSET = 0.12;
+export const DOUBLE_BOND_OFFSET = 0.16;
 
 // --------------- Scene Defaults ---------------------------------------------
-export const DEFAULT_BACKGROUND = "#0a0e1a";
-export const AMBIENT_INTENSITY = 0.4;
-export const DIRECTIONAL_INTENSITY = 0.9;
-export const GLOW_COLOR = new THREE.Color("#3b82f6");
-export const GLOW_INTENSITY = 0.15;
+export const DEFAULT_BACKGROUND = "#ffffff";
+export const AMBIENT_INTENSITY = 0.8;
+export const DIRECTIONAL_INTENSITY = 1.2;
+export const GLOW_COLOR = new THREE.Color("#4a90d9");
+export const GLOW_INTENSITY = 0.12;
 
 // --------------- Animation Defaults -----------------------------------------
 export const DEFAULT_ANIMATION_SPEED = 1.0;

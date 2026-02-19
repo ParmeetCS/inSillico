@@ -539,8 +539,9 @@ export default function ReactionLabPage() {
                                 onRecordingChange={handleRecordingChange}
                                 height={400}
                                 style={{
-                                    background: "linear-gradient(135deg, rgba(59,130,246,0.03), rgba(139,92,246,0.03))",
-                                    border: "1px solid var(--glass-border)",
+                                    background: "#ffffff",
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: 12,
                                 }}
                             />
                         </div>

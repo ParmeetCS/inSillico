@@ -37,10 +37,11 @@ export class BondMeshManager {
     // Unit cylinder (height = 1, radius = 1); scaled per-instance
     this.geometry = new THREE.CylinderGeometry(1, 1, 1, CYLINDER_SEGMENTS);
     this.material = new THREE.MeshStandardMaterial({
-      roughness: 0.4,
-      metalness: 0.05,
+      roughness: 0.3,
+      metalness: 0.1,
       vertexColors: true,
       transparent: true,
+      envMapIntensity: 1.2,
     });
   }
 
