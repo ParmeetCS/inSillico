@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -90,27 +91,23 @@ export function Navbar() {
                 >
                     <div
                         style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 10,
-                            background: "var(--gradient-accent)",
+                            width: 110,
+                            height: 130,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
+                            overflow: "hidden",
                         }}
                     >
-                        <FlaskConical size={20} color="white" />
+                        <Image
+                            src="/insilico-logo.png"
+                            alt="InSilico"
+                            width={110}
+                            height={130}
+                            style={{ objectFit: "contain" }}
+                            priority
+                        />
                     </div>
-                    <span
-                        style={{
-                            fontSize: "1.15rem",
-                            fontWeight: 700,
-                            fontFamily: "var(--font-outfit), sans-serif",
-                            letterSpacing: "-0.02em",
-                        }}
-                    >
-                        InSilico
-                    </span>
                 </Link>
 
                 {/* Desktop Nav Links */}
