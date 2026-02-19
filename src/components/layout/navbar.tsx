@@ -13,7 +13,6 @@ import {
     Activity,
     FileBarChart,
     Plus,
-    Bell,
     LogOut,
     User,
     Menu,
@@ -32,7 +31,7 @@ const navLinks = [
     { href: "/reactions", label: "Reaction Lab", icon: FlaskConical },
     { href: "/simulations", label: "Simulations", icon: Activity },
     { href: "/results", label: "Results", icon: FileBarChart },
-    { href: "/copilot", label: "AI Copilot", icon: Sparkles },
+    { href: "/copilot", label: "AI", icon: Sparkles },
 ];
 
 export function Navbar() {
@@ -184,27 +183,6 @@ export function Navbar() {
                                     New Simulation
                                 </Link>
                             </motion.div>
-
-                            <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                style={{
-                                    width: 38,
-                                    height: 38,
-                                    borderRadius: 10,
-                                    background: "transparent",
-                                    border: "1px solid var(--glass-border)",
-                                    color: "var(--text-secondary)",
-                                    cursor: "pointer",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    transition: "all 0.2s ease",
-                                }}
-                                aria-label="Notifications"
-                            >
-                                <Bell size={18} />
-                            </motion.button>
 
                             {/* User Avatar / Menu */}
                             <div style={{ position: "relative" }}>

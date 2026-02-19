@@ -174,7 +174,6 @@ export default function DashboardPage() {
                                 <th>Compound</th>
                                 <th>SMILES</th>
                                 <th>Status</th>
-                                <th>Cost</th>
                                 <th>Date</th>
                             </tr>
                         </thead>
@@ -201,7 +200,6 @@ export default function DashboardPage() {
                                 <th>Compound</th>
                                 <th>SMILES</th>
                                 <th>Status</th>
-                                <th>Cost</th>
                                 <th>Date</th>
                                 <th></th>
                             </tr>
@@ -224,7 +222,6 @@ export default function DashboardPage() {
                                         <td>
                                             <StatusBadge status={sim.status as "running" | "completed" | "failed" | "queued"} />
                                         </td>
-                                        <td>{sim.compute_cost} cr</td>
                                         <td style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>
                                             {new Date(sim.created_at).toLocaleDateString()}
                                         </td>

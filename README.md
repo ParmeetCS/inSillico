@@ -75,7 +75,7 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 - Compare multiple compounds across all predicted properties
 - **Live dataset lookup** — query experimentally measured values by SMILES or compound name across 8,862 training compounds
 
-### 🤖 AI Drug Discovery Copilot
+### 🤖 AI
 - Conversational AI assistant with deep **medicinal chemistry, ADMET, SAR, and PK/PD** expertise
 - **Context-aware** — automatically ingests your compound library, simulations & prediction results
 - **Function calling**: runs live predictions, compares molecules, and queries QSPR datasets mid-conversation

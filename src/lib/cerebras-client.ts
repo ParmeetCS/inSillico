@@ -232,23 +232,46 @@ export class CerebrasClient {
             const response = await this.chatCompletion({ ...options, messages });
             const choice = response.choices[0];
 
-            if (choice.finish_reason !== "tool_calls" || !choice.message.tool_calls) {
-                return { response, toolResults };
+            // ── Check for proper structured tool_calls ──
+            if (choice.finish_reason === "tool_calls" && choice.message.tool_calls) {
+                messages.push(choice.message);
+
+                for (const toolCall of choice.message.tool_calls) {
+                    const fnName = toolCall.function.name;
+                    let fnArgs: Record<string, unknown>;
+
+                    try {
+                        fnArgs = JSON.parse(toolCall.function.arguments);
+                    } catch {
+                        fnArgs = {};
+                    }
+
+                    let result: string;
+                    try {
+                        result = await toolExecutor(fnName, fnArgs);
+                        toolResults.push({ name: fnName, result });
+                    } catch (e) {
+                        result = JSON.stringify({ error: e instanceof Error ? e.message : "Tool execution failed" });
+                        toolResults.push({ name: fnName, result });
+                    }
+
+                    messages.push({
+                        role: "tool",
+                        content: result,
+                        tool_call_id: toolCall.id,
+                    });
+                }
+                // Continue loop to get the final natural language response
+                continue;
             }
 
-            // Execute each tool call
-            messages.push(choice.message);
+            // ── Detect tool calls embedded as text in the content ──
+            const content = choice.message?.content || "";
+            const parsedToolCall = this.extractToolCallFromText(content);
 
-            for (const toolCall of choice.message.tool_calls) {
-                const fnName = toolCall.function.name;
-                let fnArgs: Record<string, unknown>;
-
-                try {
-                    fnArgs = JSON.parse(toolCall.function.arguments);
-                } catch {
-                    fnArgs = {};
-                }
-
+            if (parsedToolCall) {
+                // The model output a tool call as text — execute it and loop back
+                const { name: fnName, args: fnArgs } = parsedToolCall;
                 let result: string;
                 try {
                     result = await toolExecutor(fnName, fnArgs);
@@ -258,12 +281,35 @@ export class CerebrasClient {
                     toolResults.push({ name: fnName, result });
                 }
 
+                // Build a synthetic tool call id
+                const syntheticId = `text_tool_${Date.now()}`;
+
+                // Add the assistant message with a proper tool_calls structure
+                messages.push({
+                    role: "assistant",
+                    content: "",
+                    tool_calls: [{
+                        id: syntheticId,
+                        type: "function",
+                        function: {
+                            name: fnName,
+                            arguments: JSON.stringify(fnArgs),
+                        },
+                    }],
+                });
+
                 messages.push({
                     role: "tool",
                     content: result,
-                    tool_call_id: toolCall.id,
+                    tool_call_id: syntheticId,
                 });
+
+                // Continue looping to get the natural language response
+                continue;
             }
+
+            // No tool calls detected — return the response
+            return { response, toolResults };
         }
 
         // Fallback: if we hit max iterations, do a final completion without tools
@@ -278,6 +324,67 @@ export class CerebrasClient {
     }
 
     /* ─── Private Helpers ─── */
+
+    /**
+     * Detect when the model outputs a tool call as plain text JSON
+     * instead of using the structured tool_calls format.
+     * Matches patterns like: { "type": "function", "name": "run_prediction", ... }
+     * or: { "name": "run_prediction", "parameters": { ... } }
+     */
+    private extractToolCallFromText(content: string): { name: string; args: Record<string, unknown> } | null {
+        const trimmed = content.trim();
+        
+        // Must look like JSON
+        if (!trimmed.startsWith("{")) return null;
+
+        try {
+            const parsed = JSON.parse(trimmed);
+
+            // Pattern 1: { "type": "function", "name": "...", "parameters": { ... } }
+            if (parsed.type === "function" && typeof parsed.name === "string" && parsed.parameters) {
+                return { name: parsed.name, args: parsed.parameters };
+            }
+
+            // Pattern 2: { "name": "...", "parameters": { ... } }
+            if (typeof parsed.name === "string" && parsed.parameters && typeof parsed.parameters === "object") {
+                return { name: parsed.name, args: parsed.parameters };
+            }
+
+            // Pattern 3: { "name": "...", "arguments": { ... } }
+            if (typeof parsed.name === "string" && parsed.arguments && typeof parsed.arguments === "object") {
+                return { name: parsed.name, args: parsed.arguments };
+            }
+
+            // Pattern 4: { "function": { "name": "...", "arguments": "..." } }
+            if (parsed.function && typeof parsed.function.name === "string") {
+                let args: Record<string, unknown> = {};
+                if (typeof parsed.function.arguments === "string") {
+                    try { args = JSON.parse(parsed.function.arguments); } catch { args = {}; }
+                } else if (typeof parsed.function.arguments === "object") {
+                    args = parsed.function.arguments;
+                }
+                return { name: parsed.function.name, args };
+            }
+
+            return null;
+        } catch {
+            // Try to extract JSON from mixed text + JSON content
+            const jsonMatch = content.match(/\{[\s\S]*"name"\s*:\s*"(\w+)"[\s\S]*"(?:parameters|arguments)"\s*:\s*\{[\s\S]*\}[\s\S]*\}/);
+            if (jsonMatch) {
+                try {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    const name = parsed.name;
+                    const args = parsed.parameters || parsed.arguments || {};
+                    if (typeof name === "string" && typeof args === "object") {
+                        return { name, args };
+                    }
+                } catch {
+                    return null;
+                }
+            }
+            return null;
+        }
+    }
 
     private buildHeaders(): Record<string, string> {
         return {
