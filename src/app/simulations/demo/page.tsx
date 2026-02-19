@@ -104,6 +104,9 @@ export default function SimulationDemoPage() {
     const [mlResults, setMlResults] = useState<any>(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [drugLikenessData, setDrugLikenessData] = useState<any>(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [moleculeFeatures, setMoleculeFeatures] = useState<any>(null);
+    const [revealedFeatureCount, setRevealedFeatureCount] = useState(0);
 
     const selectedCount = Object.values(properties).filter(Boolean).length;
     const estimatedCost = selectedCount * 5;
@@ -127,8 +130,24 @@ export default function SimulationDemoPage() {
         setPhase("running");
         setProgress(0);
         setMlResults(null);
+        setMoleculeFeatures(null);
+        setRevealedFeatureCount(0);
 
         const startTime = Date.now();
+
+        // Fetch descriptors in parallel for animated feature display
+        fetch("/api/descriptors", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ smiles: ASPIRIN.smiles }),
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.rdkit_properties) {
+                    setMoleculeFeatures(data.rdkit_properties);
+                }
+            })
+            .catch(() => { /* Silently fail */ });
 
         // Call the ML prediction API in parallel with the progress animation
         try {
@@ -178,11 +197,28 @@ export default function SimulationDemoPage() {
         const t = setInterval(() => {
             setProgress(p => {
                 if (p >= 100) { clearInterval(t); setPhase("results"); return 100; }
-                return p + 2;
+                return p + 1;
             });
-        }, 60);
+        }, 250);
         return () => clearInterval(t);
     }, [phase]);
+
+    /* ── Progressive feature reveal during running phase ── */
+    useEffect(() => {
+        if (phase !== "running" || !moleculeFeatures) return;
+        const featureKeys = Object.keys(moleculeFeatures);
+        const totalFeatures = featureKeys.length;
+        if (totalFeatures === 0) return;
+
+        setRevealedFeatureCount(0);
+        let current = 0;
+        const interval = setInterval(() => {
+            current++;
+            setRevealedFeatureCount(current);
+            if (current >= totalFeatures) clearInterval(interval);
+        }, 1200);
+        return () => clearInterval(interval);
+    }, [phase, moleculeFeatures]);
 
     /* ── Build result data from ML predictions or fallback ── */
     const DEMO_RESULTS = mlResults ? {
@@ -242,56 +278,208 @@ export default function SimulationDemoPage() {
 
     /* ═══════════════ Running Phase ═══════════════ */
     if (phase === "running") {
+        const featureEntries = moleculeFeatures ? Object.entries(moleculeFeatures) : [];
+        const visibleFeatures = featureEntries.slice(0, revealedFeatureCount);
+
+        const featureMeta: Record<string, { label: string; unit: string; color: string; icon: string }> = {
+            molecular_weight: { label: "Molecular Weight", unit: "g/mol", color: "#3b82f6", icon: "⚖️" },
+            exact_mass: { label: "Exact Mass", unit: "Da", color: "#6366f1", icon: "🔬" },
+            formula: { label: "Molecular Formula", unit: "", color: "#8b5cf6", icon: "🧬" },
+            logp_crippen: { label: "LogP (Crippen)", unit: "", color: "#06b6d4", icon: "💧" },
+            tpsa: { label: "TPSA", unit: "Å²", color: "#14b8a6", icon: "📐" },
+            hbd: { label: "H-Bond Donors", unit: "", color: "#22c55e", icon: "🟢" },
+            hba: { label: "H-Bond Acceptors", unit: "", color: "#84cc16", icon: "🔵" },
+            rotatable_bonds: { label: "Rotatable Bonds", unit: "", color: "#eab308", icon: "🔗" },
+            aromatic_rings: { label: "Aromatic Rings", unit: "", color: "#f59e0b", icon: "💍" },
+            rings: { label: "Ring Count", unit: "", color: "#f97316", icon: "⭕" },
+            heavy_atoms: { label: "Heavy Atoms", unit: "", color: "#ef4444", icon: "⚛️" },
+            fraction_csp3: { label: "Fraction CSP3", unit: "", color: "#ec4899", icon: "📊" },
+            molar_refractivity: { label: "Molar Refractivity", unit: "", color: "#a855f7", icon: "🔮" },
+            qed: { label: "QED Score", unit: "", color: "#10b981", icon: "⭐" },
+        };
+
         return (
-            <div className="page-container" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", gap: 32 }}>
+            <div className="page-container" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", gap: 24 }}>
                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}>
-                    <div style={{ width: 120, height: 120, borderRadius: "50%", background: "rgba(59,130,246,0.08)", border: "2px solid rgba(59,130,246,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 100, height: 100, borderRadius: "50%", background: "rgba(59,130,246,0.08)", border: "2px solid rgba(59,130,246,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}>
-                            <Cpu size={48} style={{ color: "var(--accent-blue)" }} />
+                            <Cpu size={40} style={{ color: "var(--accent-blue)" }} />
                         </motion.div>
                     </div>
                 </motion.div>
 
                 <div style={{ textAlign: "center" }}>
-                    <h2 style={{ fontSize: "1.4rem", fontWeight: 700, marginBottom: 8, fontFamily: "var(--font-outfit)" }}>
-                        Running Simulation…
+                    <h2 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: 6, fontFamily: "var(--font-outfit)" }}>
+                        Analyzing Molecular Features…
                     </h2>
-                    <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                        Computing physicochemical properties for <strong>Aspirin</strong>
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                        Extracting descriptors for <strong>Aspirin</strong>
                     </p>
                 </div>
 
                 {/* Progress bar */}
-                <div style={{ width: "100%", maxWidth: 480 }}>
+                <div style={{ width: "100%", maxWidth: 560 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 8 }}>
-                        <span>{progress < 30 ? "Initializing force field…" : progress < 60 ? "Calculating properties…" : progress < 85 ? "Running toxicity screening…" : "Finalizing results…"}</span>
+                        <span>
+                            {progress < 20 ? "Parsing SMILES structure…"
+                                : progress < 40 ? "Computing molecular descriptors…"
+                                : progress < 60 ? "Generating fingerprints (ECFP4, 2048-bit)…"
+                                : progress < 80 ? "Running QSPR ensemble prediction…"
+                                : progress < 95 ? "Screening toxicity & drug-likeness…"
+                                : "Compiling results…"}
+                        </span>
                         <span style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>{progress}%</span>
                     </div>
                     <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
                         <motion.div
                             animate={{ width: `${progress}%` }}
-                            style={{ height: "100%", borderRadius: 3, background: "linear-gradient(90deg, #3b82f6, #06b6d4)" }}
+                            style={{ height: "100%", borderRadius: 3, background: "linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4)" }}
                         />
                     </div>
                 </div>
 
-                {/* Steps */}
-                <GlassCard padding="20px" style={{ width: "100%", maxWidth: 480 }}>
-                    {["Molecular geometry optimization", "Physicochemical property prediction", "ADMET profiling", "Toxicity risk assessment", "Report generation"].map((step, i) => {
+                {/* Animated Feature Cards Grid */}
+                <div style={{ width: "100%", maxWidth: 560 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                        <BarChart3 size={16} style={{ color: "var(--accent-blue)" }} />
+                        <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)" }}>
+                            Input Features Used for Prediction
+                        </span>
+                        {moleculeFeatures && (
+                            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginLeft: "auto" }}>
+                                {revealedFeatureCount} / {featureEntries.length} extracted
+                            </span>
+                        )}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, minHeight: 280 }}>
+                        <AnimatePresence>
+                            {visibleFeatures.map(([key, value]) => {
+                                const meta = featureMeta[key] || { label: key, unit: "", color: "#64748b", icon: "📌" };
+                                const displayValue = typeof value === "number"
+                                    ? (Number.isInteger(value) ? value : (value as number).toFixed(3))
+                                    : String(value);
+
+                                return (
+                                    <motion.div
+                                        key={key}
+                                        initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.05 }}
+                                        style={{
+                                            padding: "10px 14px",
+                                            borderRadius: 12,
+                                            background: "var(--glass-bg)",
+                                            border: `1px solid ${meta.color}33`,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 10,
+                                            overflow: "hidden",
+                                            position: "relative",
+                                        }}
+                                    >
+                                        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: meta.color, borderRadius: "3px 0 0 3px" }} />
+                                        <span style={{ fontSize: "1.1rem", flexShrink: 0 }}>{meta.icon}</span>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 500, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                {meta.label}
+                                            </div>
+                                            <div style={{ fontSize: "0.95rem", fontWeight: 700, color: meta.color, fontFamily: "monospace", display: "flex", alignItems: "baseline", gap: 4 }}>
+                                                <motion.span initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}>
+                                                    {displayValue}
+                                                </motion.span>
+                                                {meta.unit && (
+                                                    <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 400 }}>{meta.unit}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                );
+                            })}
+                        </AnimatePresence>
+
+                        {moleculeFeatures && featureEntries.slice(revealedFeatureCount, revealedFeatureCount + 2).map(([key], i) => (
+                            <motion.div
+                                key={`skel-${key}`}
+                                animate={{ opacity: [0.3, 0.6, 0.3] }}
+                                transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }}
+                                style={{ padding: "10px 14px", borderRadius: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", height: 58 }}
+                            >
+                                <div style={{ width: "60%", height: 10, borderRadius: 4, background: "rgba(255,255,255,0.06)", marginBottom: 8 }} />
+                                <div style={{ width: "40%", height: 14, borderRadius: 4, background: "rgba(255,255,255,0.04)" }} />
+                            </motion.div>
+                        ))}
+
+                        {!moleculeFeatures && Array.from({ length: 6 }).map((_, i) => (
+                            <motion.div
+                                key={`loading-${i}`}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: [0.2, 0.5, 0.2] }}
+                                transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.15 }}
+                                style={{ padding: "10px 14px", borderRadius: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", height: 58 }}
+                            >
+                                <div style={{ width: "60%", height: 10, borderRadius: 4, background: "rgba(255,255,255,0.06)", marginBottom: 8 }} />
+                                <div style={{ width: "40%", height: 14, borderRadius: 4, background: "rgba(255,255,255,0.04)" }} />
+                            </motion.div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Fingerprint visualization bar */}
+                {moleculeFeatures && progress >= 40 && (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ width: "100%", maxWidth: 560 }}>
+                        <GlassCard padding="14px 18px">
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                <Zap size={14} style={{ color: "var(--accent-cyan)" }} />
+                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-secondary)" }}>
+                                    Morgan Fingerprint (ECFP4) — 2048-bit vector
+                                </span>
+                            </div>
+                            <div style={{ display: "flex", gap: 1, height: 20, borderRadius: 4, overflow: "hidden" }}>
+                                {Array.from({ length: 64 }).map((_, i) => (
+                                    <motion.div
+                                        key={i}
+                                        initial={{ scaleY: 0 }}
+                                        animate={{ scaleY: 1 }}
+                                        transition={{ delay: i * 0.02, duration: 0.3 }}
+                                        style={{
+                                            flex: 1,
+                                            background: Math.random() > 0.6
+                                                ? `hsl(${200 + i * 2}, 70%, ${40 + Math.random() * 20}%)`
+                                                : "rgba(255,255,255,0.03)",
+                                            borderRadius: 1,
+                                            transformOrigin: "bottom",
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                            <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 8 }}>
+                                Encoding molecular substructures as binary features for ML ensemble input
+                            </p>
+                        </GlassCard>
+                    </motion.div>
+                )}
+
+                {/* Pipeline steps */}
+                <GlassCard padding="16px 20px" style={{ width: "100%", maxWidth: 560 }}>
+                    <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 10 }}>
+                        Prediction Pipeline
+                    </div>
+                    {["Parse SMILES → RDKit Mol object", "Extract 14 molecular descriptors", "Generate ECFP4 fingerprint (2048 bits)", "Run Random Forest + XGBoost ensemble", "Compute drug-likeness & toxicity"].map((step, i) => {
                         const done = progress > (i + 1) * 18;
                         const active = !done && progress > i * 18;
                         return (
-                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", opacity: done || active ? 1 : 0.35 }}>
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 0", opacity: done || active ? 1 : 0.3 }}>
                                 {done ? (
-                                    <CheckCircle2 size={16} style={{ color: "var(--accent-green)", flexShrink: 0 }} />
+                                    <CheckCircle2 size={15} style={{ color: "var(--accent-green)", flexShrink: 0 }} />
                                 ) : active ? (
                                     <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                                        <Loader2 size={16} style={{ color: "var(--accent-blue)", flexShrink: 0 }} />
+                                        <Loader2 size={15} style={{ color: "var(--accent-blue)", flexShrink: 0 }} />
                                     </motion.div>
                                 ) : (
-                                    <div style={{ width: 16, height: 16, borderRadius: "50%", border: "1.5px solid var(--text-muted)", flexShrink: 0 }} />
+                                    <div style={{ width: 15, height: 15, borderRadius: "50%", border: "1.5px solid var(--text-muted)", flexShrink: 0 }} />
                                 )}
-                                <span style={{ fontSize: "0.85rem", color: done ? "var(--text-primary)" : "var(--text-secondary)" }}>{step}</span>
+                                <span style={{ fontSize: "0.82rem", color: done ? "var(--text-primary)" : "var(--text-secondary)" }}>{step}</span>
                             </div>
                         );
                     })}
