@@ -27,6 +27,7 @@ Endpoints:
 
 import os
 import sys
+import gc
 import json
 import logging
 import time
@@ -181,8 +182,8 @@ def load_qspr_models():
 
             models_loaded = 0
 
-            # Load RandomForest
-            if "random_forest" in available.get(prop_name, []):
+            # Load RandomForest (skip in LEAN_MODE to save ~100MB RAM)
+            if not LEAN_MODE and "random_forest" in available.get(prop_name, []):
                 rf_data = serializer.load_model(prop_name, "random_forest")
                 rf_model = RandomForestQSPR(task=task)
                 rf_model.model = rf_data["model"]
@@ -226,6 +227,9 @@ def load_qspr_models():
         _load_legacy_models()
     else:
         logger.info("  Skipping legacy models (LEAN_MODE)")
+
+    # Free unused memory
+    gc.collect()
 
     _server_ready = True
     logger.info(
@@ -602,7 +606,13 @@ def drug_likeness():
 
 # ─── QSPR Dataset Lookup ───
 
-import pandas as pd
+# Guard pandas import — not installed in LEAN_MODE deployment
+try:
+    import pandas as pd
+    _HAS_PANDAS = True
+except ImportError:
+    _HAS_PANDAS = False
+
 from rdkit import Chem as _Chem
 
 _dataset_frames: dict = {}  # loaded lazily
@@ -611,6 +621,8 @@ _dataset_frames: dict = {}  # loaded lazily
 def _load_datasets():
     """Load QSPR training CSV files into pandas DataFrames (once)."""
     global _dataset_frames
+    if not _HAS_PANDAS:
+        return {}
     if _dataset_frames:
         return _dataset_frames
 
