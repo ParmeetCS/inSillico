@@ -38,20 +38,22 @@ export default function MoleculeInputPage() {
     /* ── Core save logic (separated for timeout wrapper) ── */
     const doSave = async (session: { user: { id: string } }) => {
         const uid = session.user.id;
+        const t0 = Date.now();
+        const step = (label: string) => console.log(`[save] ${label} (${Date.now() - t0}ms)`);
 
         // 1. Ensure we have a project
         let projectId: string;
-        console.log("[save] fetching projects...");
+        step("fetching projects...");
         const { data: projects, error: projFetchErr } = await supabase
             .from("projects").select("id").eq("user_id", uid).limit(1);
 
         if (projFetchErr) throw new Error("Failed to fetch projects: " + projFetchErr.message);
-        console.log("[save] projects found:", projects?.length);
+        step(`projects found: ${projects?.length ?? 0}`);
 
         if (projects && projects.length > 0) {
             projectId = projects[0].id;
         } else {
-            console.log("[save] creating default project...");
+            step("creating default project...");
             const { data: newProject, error: projCreateErr } = await supabase
                 .from("projects")
                 .insert({ user_id: uid, name: "My First Project", description: "Default project" })
@@ -59,28 +61,30 @@ export default function MoleculeInputPage() {
                 .single();
             if (projCreateErr || !newProject) throw new Error("Failed to create project: " + (projCreateErr?.message ?? "Unknown error"));
             projectId = newProject.id;
+            step("project created");
         }
-        console.log("[save] projectId:", projectId);
 
         // 2. Check for existing molecule with same SMILES
-        console.log("[save] checking for duplicate SMILES...");
-        const { data: existingMols } = await supabase
+        step("checking for duplicate SMILES...");
+        const { data: existingMols, error: dupErr } = await supabase
             .from("molecules")
             .select("id")
             .eq("user_id", uid)
             .eq("smiles", smiles.trim())
             .limit(1);
 
+        if (dupErr) throw new Error("Duplicate check failed: " + dupErr.message);
+
         let moleculeId: string;
 
         if (existingMols && existingMols.length > 0) {
             moleculeId = existingMols[0].id;
-            console.log("[save] reusing existing molecule:", moleculeId);
+            step("reusing existing molecule: " + moleculeId);
             haptic("success");
             toast("Molecule already in your library — proceeding to simulation.", "info");
         } else {
             // 3. Create the molecule
-            console.log("[save] inserting molecule...");
+            step("inserting molecule...");
             const { data: molecule, error: molErr } = await supabase
                 .from("molecules")
                 .insert({
@@ -98,7 +102,7 @@ export default function MoleculeInputPage() {
                 throw new Error(`Molecule save failed: ${molErr?.message ?? "Unknown error"}`);
             }
             moleculeId = molecule.id;
-            console.log("[save] molecule created:", moleculeId);
+            step("molecule created: " + moleculeId);
         }
 
         haptic("success");
@@ -142,11 +146,11 @@ export default function MoleculeInputPage() {
 
             console.log("[save] uid:", activeSession.user.id);
 
-            // Run save with a real 15s timeout via Promise.race
+            // Run save with a 30s timeout (Supabase free-tier may need wake-up time)
             await Promise.race([
                 doSave(activeSession),
                 new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error("Save timed out — please check your connection and try again.")), 15000)
+                    setTimeout(() => reject(new Error("Save timed out — Supabase may be waking up. Please try again.")), 30000)
                 ),
             ]);
         } catch (err) {

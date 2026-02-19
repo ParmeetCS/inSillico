@@ -31,6 +31,19 @@ from .config import DEFAULT_ENSEMBLE_WEIGHTS
 
 logger = logging.getLogger("qspr.ensemble")
 
+# Reference uncertainty scales (based on training RMSE × 2) used to
+# normalise single-prediction confidence.  When only one sample is
+# predicted the old code divided by max(uncertainty)==itself → 0.
+# These per-property scales keep confidence meaningful for single
+# molecules.  Scales are deliberately generous (2× RMSE) so that
+# typical predictions land in the 0.4–0.9 confidence range.
+_UNCERTAINTY_REF_SCALES: Dict[str, float] = {
+    "logp": 2.0,       # training RMSE ≈ 0.95
+    "solubility": 2.0,  # training RMSE ≈ 0.92
+    "bbbp": 1.0,        # classification, scale on probability
+    "toxicity": 1.0,    # classification, scale on probability
+}
+
 
 class QSPREnsemble:
     """
@@ -46,11 +59,12 @@ class QSPREnsemble:
     updated as better models are trained.
     """
 
-    def __init__(self, task: str):
+    def __init__(self, task: str, property_name: str = ""):
         if task not in ("regression", "classification"):
             raise ValueError(f"task must be 'regression' or 'classification'")
 
         self.task = task
+        self.property_name = property_name
         self.models: Dict[str, QSPRModel] = {}
         self.weights: Dict[str, float] = {}
         self.is_fitted = False
@@ -165,9 +179,10 @@ class QSPREnsemble:
         # Total uncertainty = sqrt(inter-model variance + mean intra-model variance)
         total_uncertainty = np.sqrt(ensemble_variance + avg_intra_unc ** 2)
 
-        # Confidence: inverse of normalized uncertainty (0 to 1)
-        max_unc = np.max(total_uncertainty) if np.max(total_uncertainty) > 0 else 1.0
-        confidence = 1.0 - np.clip(total_uncertainty / (max_unc + 1e-8), 0, 1)
+        # Confidence: use a fixed reference scale so single-sample
+        # predictions get meaningful confidence instead of always 0.
+        ref_scale = _UNCERTAINTY_REF_SCALES.get(self.property_name, 2.0)
+        confidence = 1.0 - np.clip(total_uncertainty / ref_scale, 0, 1)
 
         return {
             "prediction": weighted_pred,

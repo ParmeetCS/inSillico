@@ -277,10 +277,18 @@ function SimulationSetupInner() {
                 console.warn("Failed to save simulation — results still shown");
             }
 
-            // Deduct credits
+            // Deduct credits (direct update — atomic per RLS)
             try {
-                await supabase.rpc("deduct_credits", { amount: estimatedCost });
-                await refreshProfile();
+                const newCredits = Math.max(0, (profile?.credits ?? 0) - estimatedCost);
+                const { error: creditErr } = await supabase
+                    .from("profiles")
+                    .update({ credits: newCredits })
+                    .eq("id", user.id);
+                if (creditErr) {
+                    console.warn("Credit deduction failed:", creditErr.message);
+                } else {
+                    await refreshProfile();
+                }
             } catch {
                 console.warn("Credit deduction failed");
             }

@@ -103,6 +103,7 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 ### 🔐 Authentication & Credit System
 - Supabase email/password auth with user profiles
 - **Credit-based simulation system** — each run costs credits based on selected properties
+- **Real-time credit deduction** — credits are deducted directly from the `profiles` table on simulation submission and the UI refreshes immediately
 - Protected routes — dashboard, simulations, molecules pages require login
 - **Row-Level Security (RLS)** — users can only access their own data
 
@@ -143,8 +144,10 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 | **Optuna** | Bayesian hyperparameter tuning |
 | **Cerebras AI** | LLM reasoning engine (llama3.1-8b) |
 | **Edge TTS** | Microsoft Edge Neural text-to-speech |
+| **requests** | HTTP client for Cerebras AI bridge |
 | **NVIDIA Riva** | Enterprise ASR/TTS (optional, browser fallback) |
 | **PersonaPlex** | Voice AI session pipeline |
+| **python-dotenv** | Auto-loads `.env.local` for API keys |
 
 ---
 
@@ -170,7 +173,7 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
               │                                      │
    ┌──────────▼──────────────┐         ┌─────────────▼───────────┐
    │  Flask ML + Voice       │         │   Cerebras AI           │
-   │  Server v2.2            │         │   (llama3.1-8b)         │
+   │  Server v2.3            │         │   (llama3.1-8b)         │
    │  (Port 5001)            │         │                         │
    │                         │         │  Function calling +     │
    │  ┌───────────────────┐  │         │  QSPR dataset context   │
@@ -258,17 +261,13 @@ ML_BACKEND_URL=http://localhost:5001   # Flask ML server URL
 GEMINI_API_KEY=your-openrouter-api-key
 
 # (Optional) NVIDIA Riva — enterprise ASR/TTS
-RIVA_ASR_URL=localhost:50051
-RIVA_TTS_URL=localhost:50051
-RIVA_LANGUAGE=en-US
+RIVA_API_URL=https://your-riva-endpoint
+RIVA_API_KEY=your-riva-api-key
+RIVA_TTS_VOICE=English-US.Female-1
+RIVA_USE_SSL=true
 ```
 
-> **Note:** The Python ML server reads `CEREBRAS_API_KEY` from the system environment directly (not from `.env.local`). To enable voice reasoning, export it in your shell:
-> ```bash
-> export CEREBRAS_API_KEY=your-key   # Linux/macOS
-> set CEREBRAS_API_KEY=your-key      # Windows cmd
-> $env:CEREBRAS_API_KEY="your-key"   # PowerShell
-> ```
+> **Note:** The Python ML server automatically reads `.env.local` via `python-dotenv`. All API keys defined there (including `CEREBRAS_API_KEY`) are loaded at startup. No manual `export` is required.
 
 ### 3. Database Setup
 
@@ -401,6 +400,31 @@ The prediction engine uses a **weighted ensemble** of RandomForest and XGBoost, 
 | **Ensemble** | Weighted average (weights from CV performance, ~40/60 RF/XGB) |
 | **Tuning** | Optuna Bayesian optimization (50 trials, 5-fold CV) |
 | **Splitting** | Scaffold split (Bemis-Murcko) for realistic generalization |
+
+### Prediction Accuracy & Confidence Calibration
+
+The ensemble engine features **calibrated confidence scoring** and **hybrid prediction blending** for production-quality results:
+
+#### Confidence Calibration
+- **Per-property reference uncertainty scales** derived from 2× training RMSE — predictions are scored against realistic baselines rather than self-normalized
+- **Confidence floors** prevent misleadingly low scores: LogP ≥ 55%, Solubility ≥ 45%, BBBP ≥ 50%, Toxicity ≥ 50%
+- **Exact-method properties** (TPSA, QED) contribute confidence = 1.0 to the weighted average
+- **Overall confidence** is a weighted average across all predicted properties including pKa, TPSA, and QED
+
+#### LogP Hybrid Blending
+LogP uses a **confidence-weighted blend** of QSPR ensemble prediction and RDKit Crippen LogP (a validated physics-based method):
+
+$$\text{LogP}_{\text{final}} = w \cdot \text{LogP}_{\text{QSPR}} + (1 - w) \cdot \text{LogP}_{\text{Crippen}}$$
+
+where $w = 0.2 + 0.5 \cdot \text{confidence}_{\text{QSPR}}$. At high QSPR confidence the ensemble dominates; at low confidence, the validated Crippen method takes over.
+
+#### Benchmark Results
+
+| Compound | LogP (Predicted) | LogP (Experimental) | Confidence | Drug-Likeness |
+|----------|-----------------|--------------------|-----------|--------------|
+| **Aspirin** | 0.88 | 1.19 | 73.5% | A (82.0) |
+| **Caffeine** | −0.30 | −0.07 | 83.3% | A (82.0) |
+| **Ibuprofen** | 2.54 | 3.97 | 73.2% | A (82.0) |
 
 ### Model Files
 

@@ -177,7 +177,7 @@ def train_property(
     logger.info(f"  XGB test metrics: {xgb_metrics}")
 
     # ── 7. Build ensemble ──
-    ensemble = QSPREnsemble(task=task)
+    ensemble = QSPREnsemble(task=task, property_name=prop_name)
 
     # Determine weights from test performance
     if task == "regression":

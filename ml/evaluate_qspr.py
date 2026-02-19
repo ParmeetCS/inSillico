@@ -109,7 +109,7 @@ def evaluate_property(
 
     # Ensemble evaluation
     if results.get("random_forest") and results.get("xgboost"):
-        ensemble = QSPREnsemble(task=task)
+        ensemble = QSPREnsemble(task=task, property_name=prop_name)
         ens_config = serializer.load_ensemble_config(prop_name)
         weights = ens_config.get("weights", {"random_forest": 0.4, "xgboost": 0.6})
 
