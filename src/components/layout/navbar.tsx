@@ -28,6 +28,7 @@ const navLinks = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/projects", label: "Projects", icon: FolderOpen },
     { href: "/molecules/new", label: "Molecules", icon: Atom },
+    { href: "/reactions", label: "Reaction Lab", icon: FlaskConical },
     { href: "/simulations", label: "Simulations", icon: Activity },
     { href: "/results", label: "Results", icon: FileBarChart },
     { href: "/copilot", label: "AI Copilot", icon: Sparkles },
