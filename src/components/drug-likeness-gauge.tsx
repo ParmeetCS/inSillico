@@ -231,7 +231,14 @@ function RuleRow({ rule, value, threshold, passed, unit, delay }: LipinskiRule &
    Main Export: DrugLikenessGauge
    ═══════════════════════════════════════════════════════ */
 export default function DrugLikenessGauge({ data }: { data: DrugLikenessData }) {
-    const { score, grade, qed, lipinski, veber, pains } = data;
+    const {
+        score = 0,
+        grade = "N/A",
+        qed = 0,
+        lipinski = { violations: 0, rules: [] },
+        veber = { violations: 0, rules: [] },
+        pains = { alert_count: 0, passed: true, alerts: [] },
+    } = data ?? {};
 
     const summaryText = useMemo(() => {
         const parts: string[] = [];
