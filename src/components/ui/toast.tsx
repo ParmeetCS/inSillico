@@ -21,6 +21,7 @@ const toastConfig: Record<ToastType, { icon: typeof CheckCircle2; color: string;
 };
 
 let globalAddToast: ((message: string, type: ToastType) => void) | null = null;
+let toastCounter = 0;
 
 export function toast(message: string, type: ToastType = "info") {
     if (globalAddToast) globalAddToast(message, type);
@@ -30,7 +31,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([]);
 
     const addToast = useCallback((message: string, type: ToastType) => {
-        const id = Date.now().toString();
+        const id = `${Date.now()}-${++toastCounter}`;
         haptic(type === "success" ? "success" : type === "error" ? "error" : "light");
         setToasts((prev) => [...prev, { id, message, type }]);
         setTimeout(() => {
