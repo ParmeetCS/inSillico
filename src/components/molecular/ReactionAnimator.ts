@@ -3,7 +3,7 @@
 // Smoothly transitions between reactant and product geometries
 // =============================================================================
 
-import type { ReactionData, BondChange, Atom, Bond } from "./types";
+import type { ReactionData, BondChange, Atom } from "./types";
 import { AtomMeshManager } from "./AtomMesh";
 import { BondMeshManager } from "./BondMesh";
 
@@ -21,11 +21,18 @@ export class ReactionAnimator {
   private phase: ReactionPhase = "idle";
   private looping = false;
 
+  // Pause at endpoints when looping (ms)
+  private endpointPause = 800;
+  private pauseTimer = 0;
+  private pauseDirection: "forward" | "reverse" = "forward";
+  private reversing = false;
+
   // Cached start/end positions for morphing
   private startPositions: { x: number; y: number; z: number }[] = [];
   private endPositions: { x: number; y: number; z: number }[] = [];
   private breakingBonds: BondChange[] = [];
   private formingBonds: BondChange[] = [];
+  private atomCount = 0;
 
   constructor(atomMgr: AtomMeshManager, bondMgr: BondMeshManager) {
     this.atomMgr = atomMgr;
@@ -37,18 +44,23 @@ export class ReactionAnimator {
     this.reaction = reaction;
     this.progress = 0;
     this.phase = "idle";
+    this.reversing = false;
+    this.pauseTimer = 0;
 
-    // Cache positions
-    this.startPositions = reaction.before.atoms.map((a) => ({
-      x: a.x,
-      y: a.y,
-      z: a.z,
-    }));
-    this.endPositions = reaction.after.atoms.map((a) => ({
-      x: a.x,
-      y: a.y,
-      z: a.z,
-    }));
+    // Determine the unified atom count (pad shorter list)
+    const beforeCount = reaction.before.atoms.length;
+    const afterCount = reaction.after.atoms.length;
+    this.atomCount = Math.max(beforeCount, afterCount);
+
+    // Cache positions — pad missing atoms at center (0,0,0)
+    this.startPositions = [];
+    this.endPositions = [];
+    for (let i = 0; i < this.atomCount; i++) {
+      const ba = reaction.before.atoms[i];
+      const aa = reaction.after.atoms[i];
+      this.startPositions.push(ba ? { x: ba.x, y: ba.y, z: ba.z } : { x: 0, y: 0, z: 0 });
+      this.endPositions.push(aa ? { x: aa.x, y: aa.y, z: aa.z } : { x: 0, y: 0, z: 0 });
+    }
 
     // Separate bond changes
     this.breakingBonds = reaction.bondChanges.filter((c) => c.type === "break");
@@ -102,6 +114,8 @@ export class ReactionAnimator {
     if (this.phase === "idle" || this.phase === "complete") {
       this.progress = 0;
       this.phase = "breaking";
+      this.reversing = false;
+      this.pauseTimer = 0;
     }
   }
 
@@ -115,6 +129,8 @@ export class ReactionAnimator {
     this.progress = 0;
     this.phase = "idle";
     this.playing = false;
+    this.reversing = false;
+    this.pauseTimer = 0;
     if (this.reaction) {
       this.setReaction(this.reaction);
     }
@@ -140,18 +156,62 @@ export class ReactionAnimator {
     const dt = timestamp - this.lastTimestamp;
     this.lastTimestamp = timestamp;
 
-    const effectiveDuration = this.duration / this.speed;
-    this.progress += dt / effectiveDuration;
-
-    if (this.progress >= 1) {
-      this.progress = 1;
-      this.phase = "complete";
-      this.playing = false;
-      if (this.looping) {
-        this.progress = 0;
-        this.phase = "breaking";
-        this.playing = true;
+    // Handle endpoint pause (brief hold at reactants/products before reversing)
+    if (this.pauseTimer > 0) {
+      this.pauseTimer -= dt * this.speed;
+      if (this.pauseTimer <= 0) {
+        this.pauseTimer = 0;
+        // After pause at product end, reverse back
+        if (this.reversing) {
+          // We're about to go forward again after reversing back to start
+          this.reversing = false;
+          this.progress = 0;
+          this.phase = "breaking";
+        }
       }
+      // Still render current frame during pause
+      this.applyFrame(this.progress);
+      return true;
+    }
+
+    const effectiveDuration = this.duration / this.speed;
+
+    if (this.reversing) {
+      // Animate backwards
+      this.progress -= dt / effectiveDuration;
+      if (this.progress <= 0) {
+        this.progress = 0;
+        this.phase = "idle";
+        if (this.looping) {
+          this.pauseTimer = this.endpointPause;
+        } else {
+          this.playing = false;
+          this.phase = "complete";
+        }
+      }
+    } else {
+      // Animate forwards
+      this.progress += dt / effectiveDuration;
+      if (this.progress >= 1) {
+        this.progress = 1;
+        this.phase = "complete";
+        if (this.looping) {
+          this.reversing = true;
+          this.pauseTimer = this.endpointPause;
+        } else {
+          this.playing = false;
+        }
+      }
+    }
+
+    // Update phase based on progress
+    if (this.progress > 0 && this.progress < 1) {
+      this.phase =
+        this.progress < 0.33
+          ? "breaking"
+          : this.progress < 0.66
+          ? "morphing"
+          : "forming";
     }
 
     this.applyFrame(this.progress);
@@ -188,16 +248,21 @@ export class ReactionAnimator {
       this.bondMgr.setBondScale(bc.atom1, bc.atom2, 1 - breakT * 0.5);
     }
 
-    // 2) Atom morphing: interpolate positions
+    // 2) Atom morphing: interpolate positions (using padded arrays)
     this.atomMgr.lerpPositions(this.startPositions, this.endPositions, morphT);
 
-    // Update bond positions to follow atoms
-    const currentAtoms = this.reaction.before.atoms.map((a, i) => ({
-      ...a,
-      x: this.startPositions[i].x + (this.endPositions[i].x - this.startPositions[i].x) * morphT,
-      y: this.startPositions[i].y + (this.endPositions[i].y - this.startPositions[i].y) * morphT,
-      z: this.startPositions[i].z + (this.endPositions[i].z - this.startPositions[i].z) * morphT,
-    }));
+    // Update bond positions to follow atoms — use unified atom count
+    const currentAtoms: Atom[] = [];
+    for (let i = 0; i < this.atomCount; i++) {
+      const base = this.reaction.before.atoms[i] ?? this.reaction.after.atoms[i] ?? { id: i, element: "H" };
+      currentAtoms.push({
+        id: base.id,
+        element: base.element,
+        x: this.startPositions[i].x + (this.endPositions[i].x - this.startPositions[i].x) * morphT,
+        y: this.startPositions[i].y + (this.endPositions[i].y - this.startPositions[i].y) * morphT,
+        z: this.startPositions[i].z + (this.endPositions[i].z - this.startPositions[i].z) * morphT,
+      });
+    }
     this.bondMgr.updateFromAtoms(currentAtoms);
 
     // 3) Bond forming: scale from 0 to 1

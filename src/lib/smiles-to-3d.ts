@@ -320,6 +320,7 @@ export function smilesToMoleculeData(smiles: string): MoleculeData {
 /**
  * Generate reaction data from reactant and product SMILES.
  * Runs entirely client-side.
+ * Aligns before/after geometries and pads atom counts for smooth morphing.
  */
 export function smilesToReactionData(
     reactantSmiles: string,
@@ -329,18 +330,96 @@ export function smilesToReactionData(
     const before = smilesToMoleculeData(reactantSmiles);
     const after = smilesToMoleculeData(productSmiles);
 
-    // Generate a transition state as midpoint geometry
+    // ── Align the product geometry to the reactant ──────────────────────
+    // Center both molecules at origin
+    const centerOf = (atoms: Atom[]) => {
+        let cx = 0, cy = 0, cz = 0;
+        for (const a of atoms) { cx += a.x; cy += a.y; cz += a.z; }
+        const n = atoms.length || 1;
+        return { x: cx / n, y: cy / n, z: cz / n };
+    };
+
+    const cBefore = centerOf(before.atoms);
+    const cAfter = centerOf(after.atoms);
+
+    // Shift both to a common origin
+    for (const a of before.atoms) {
+        a.x -= cBefore.x; a.y -= cBefore.y; a.z -= cBefore.z;
+    }
+    for (const a of after.atoms) {
+        a.x -= cAfter.x; a.y -= cAfter.y; a.z -= cAfter.z;
+    }
+
+    // Scale product to match reactant's bounding radius for visual consistency
+    const radiusOf = (atoms: Atom[]) => {
+        let maxR = 0;
+        for (const a of atoms) {
+            const r = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+            if (r > maxR) maxR = r;
+        }
+        return maxR || 1;
+    };
+
+    const rBefore = radiusOf(before.atoms);
+    const rAfter = radiusOf(after.atoms);
+    if (rAfter > 0.01) {
+        const scaleFactor = rBefore / rAfter;
+        // Only scale if appreciably different (>20% mismatch)
+        if (Math.abs(scaleFactor - 1) > 0.2) {
+            const blend = 0.5 + 0.5 * scaleFactor; // partial scale toward reactant size
+            for (const a of after.atoms) {
+                a.x *= blend; a.y *= blend; a.z *= blend;
+            }
+        }
+    }
+
+    // ── Pad shorter atom list so both have equal length ─────────────────
+    // Extra atoms are placed at center (scale 0) so they smoothly appear/disappear
     const maxAtoms = Math.max(before.atoms.length, after.atoms.length);
+
+    while (before.atoms.length < maxAtoms) {
+        const idx = before.atoms.length;
+        // Place ghost atoms near the center of the molecule
+        const nearestAfter = after.atoms[idx] || after.atoms[after.atoms.length - 1];
+        before.atoms.push({
+            id: idx,
+            element: nearestAfter?.element ?? "H",
+            x: 0, y: 0, z: 0,
+        });
+    }
+
+    while (after.atoms.length < maxAtoms) {
+        const idx = after.atoms.length;
+        const nearestBefore = before.atoms[idx] || before.atoms[before.atoms.length - 1];
+        after.atoms.push({
+            id: idx,
+            element: nearestBefore?.element ?? "H",
+            x: 0, y: 0, z: 0,
+        });
+    }
+
+    // Ensure atom IDs are sequential
+    for (let i = 0; i < before.atoms.length; i++) before.atoms[i].id = i;
+    for (let i = 0; i < after.atoms.length; i++) after.atoms[i].id = i;
+
+    // Update conformers for before molecule (used for camera fitting)
+    if (before.conformers) {
+        while (before.conformers[0] && before.conformers[0].length < maxAtoms) {
+            before.conformers[0].push({ x: 0, y: 0, z: 0 });
+        }
+    }
+
+    // ── Generate transition state as a perturbed midpoint ───────────────
     const tsAtoms: Atom[] = [];
     for (let i = 0; i < maxAtoms; i++) {
-        const a = before.atoms[i] ?? after.atoms[i];
-        const b = after.atoms[i] ?? before.atoms[i];
+        const a = before.atoms[i];
+        const b = after.atoms[i];
         tsAtoms.push({
             id: i,
             element: a.element,
-            x: (a.x + b.x) / 2 + (Math.random() - 0.5) * 0.5,
-            y: (a.y + b.y) / 2 + (Math.random() - 0.5) * 0.5,
-            z: (a.z + b.z) / 2 + (Math.random() - 0.5) * 0.5,
+            x: (a.x + b.x) / 2 + (Math.random() - 0.5) * 0.3,
+            y: (a.y + b.y) / 2 + (Math.random() - 0.5) * 0.3,
+            z: (a.z + b.z) / 2 + (Math.random() - 0.5) * 0.3,
         });
     }
 

@@ -250,6 +250,28 @@ const MolecularScene = forwardRef<MolecularSceneHandle, MolecularSceneProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // ---- Camera fitting ----
+    const fitCamera = useCallback(
+      (atoms: { x: number; y: number; z: number }[]) => {
+        if (!cameraRef.current || !controlsRef.current || atoms.length === 0) return;
+        const center = new THREE.Vector3();
+        let maxR = 0;
+        for (const a of atoms) {
+          center.add(new THREE.Vector3(a.x, a.y, a.z));
+        }
+        center.divideScalar(atoms.length);
+        for (const a of atoms) {
+          const d = new THREE.Vector3(a.x, a.y, a.z).distanceTo(center);
+          if (d > maxR) maxR = d;
+        }
+        const dist = Math.max(maxR * 2.5, 8);
+        cameraRef.current.position.set(center.x, center.y, center.z + dist);
+        controlsRef.current.target.copy(center);
+        controlsRef.current.update();
+      },
+      []
+    );
+
     // ---- Molecule data updates ----
     useEffect(() => {
       if (!atomMgrRef.current || !bondMgrRef.current) return;
@@ -281,13 +303,31 @@ const MolecularScene = forwardRef<MolecularSceneHandle, MolecularSceneProps>(
       if (!reaction || !reactionAnimRef.current) return;
       reactionAnimRef.current.setReaction(reaction);
       reactionAnimRef.current.setLooping(true);
-    }, [reaction]);
+
+      // Initialize vibration for reaction atoms
+      if (vibrationRef.current) {
+        vibrationRef.current.init(reaction.before.atoms.length);
+      }
+
+      // Auto-fit camera to reaction geometry
+      fitCamera(reaction.before.atoms);
+
+      // Auto-play if isPlaying is already true
+      if (isPlaying) {
+        reactionAnimRef.current.play();
+      }
+    }, [reaction, fitCamera, isPlaying]);
 
     // ---- Playing state ----
     useEffect(() => {
       if (conformerAnimRef.current?.hasAnimation()) {
         if (isPlaying) conformerAnimRef.current.play();
         else conformerAnimRef.current.pause();
+      }
+      // Also control reaction animation
+      if (reactionAnimRef.current) {
+        if (isPlaying) reactionAnimRef.current.play();
+        else reactionAnimRef.current.pause();
       }
     }, [isPlaying]);
 
@@ -321,28 +361,6 @@ const MolecularScene = forwardRef<MolecularSceneHandle, MolecularSceneProps>(
       atomMgrRef.current?.setMode(mode);
       bondMgrRef.current?.setMode(mode);
     }, [mode]);
-
-    // ---- Camera fitting ----
-    const fitCamera = useCallback(
-      (atoms: { x: number; y: number; z: number }[]) => {
-        if (!cameraRef.current || !controlsRef.current || atoms.length === 0) return;
-        const center = new THREE.Vector3();
-        let maxR = 0;
-        for (const a of atoms) {
-          center.add(new THREE.Vector3(a.x, a.y, a.z));
-        }
-        center.divideScalar(atoms.length);
-        for (const a of atoms) {
-          const d = new THREE.Vector3(a.x, a.y, a.z).distanceTo(center);
-          if (d > maxR) maxR = d;
-        }
-        const dist = Math.max(maxR * 2.5, 8);
-        cameraRef.current.position.set(center.x, center.y, center.z + dist);
-        controlsRef.current.target.copy(center);
-        controlsRef.current.update();
-      },
-      []
-    );
 
     // ---- Imperative handle (ref API) ----
     useImperativeHandle(
