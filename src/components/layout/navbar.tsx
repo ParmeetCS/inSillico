@@ -92,8 +92,9 @@ export function Navbar() {
                 >
                     <div
                         style={{
-                            width: 110,
-                            height: 130,
+                            width: 320,
+                            height: 70,
+                            borderRadius: 10,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -101,10 +102,10 @@ export function Navbar() {
                         }}
                     >
                         <Image
-                            src="/insilico-logo.png"
+                            src="/insilico-navbar-logo.svg"
                             alt="InSilico"
-                            width={110}
-                            height={130}
+                            width={320}
+                            height={70}
                             style={{ objectFit: "contain" }}
                             priority
                         />
