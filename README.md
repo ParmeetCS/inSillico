@@ -7,7 +7,7 @@
 <h1 align="center">🧬 InSilico Formulator</h1>
 
 <p align="center">
-  <strong>AI-Powered In-Silico Drug Formulation & Physicochemical Prediction Platform</strong>
+  <strong>AI-Powered In-Silico Drug Formulation, Network Pharmacology & Physicochemical Prediction Platform</strong>
 </p>
 
 <p align="center">
@@ -18,6 +18,7 @@
   <a href="#-demo">Demo</a> •
   <a href="#-api-reference">API</a> •
   <a href="#-ml-models">ML Models</a> •
+  <a href="#-network-pharmacology">Network Pharmacology</a> •
   <a href="#-deployment">Deployment</a> •
   <a href="#-available-scripts">Scripts</a> •
   <a href="#-team">Team</a>
@@ -31,6 +32,9 @@
   <img src="https://img.shields.io/badge/Python-ML%20Backend-3776ab?logo=python" />
   <img src="https://img.shields.io/badge/QSPR-v2.0_Ensemble-ff6600" />
   <img src="https://img.shields.io/badge/RDKit-ECFP4_2048-005571" />
+  <img src="https://img.shields.io/badge/ChEMBL_34-Target_Prediction-2563eb" />
+  <img src="https://img.shields.io/badge/STRING_DB-PPI_Network-8b5cf6" />
+  <img src="https://img.shields.io/badge/Open_Targets-Disease_Mapping-ef4444" />
   <img src="https://img.shields.io/badge/Cerebras-AI_Copilot-8b5cf6" />
   <img src="https://img.shields.io/badge/PersonaPlex-Voice_AI-22c55e" />
   <img src="https://img.shields.io/badge/Docker-Railway-0db7ed?logo=docker" />
@@ -102,6 +106,71 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 - Markdown-rendered responses with suggested follow-up prompts
 - **Per-compound AI summary** — one-click 2–3 sentence analysis on any molecule card
 
+### 🕸️ Network Pharmacology (Real-Data Pipeline)
+A complete **systems pharmacology** module that maps a single SMILES string through the full drug-target-pathway-disease axis — powered entirely by real biomedical databases, not mock data.
+
+#### 3-Tier Target Prediction Pipeline
+
+| Tier | Source | Method | Details |
+|------|--------|--------|---------|
+| **Tier 1 — ChEMBL Live API** | ChEMBL 34 (EBI) | Structure similarity search (Tanimoto ≥ 70%) + bioactivity lookup (pChEMBL ≥ 5.0) | Queries 2.4M compounds / 15.5M activities in real-time; SEA-inspired scoring: `confidence = similarity × (pChEMBL / 10)` |
+| **Tier 2 — Local Reference DB** | ~120 FDA-approved drugs / ~200 target interactions | Morgan FP (ECFP4, 2048-bit) Tanimoto similarity | Pre-built reference DB sourced from ChEMBL/DrugBank; sigmoid probability with potency weighting |
+| **Tier 3 — SMARTS Pharmacophore** | Published SAR literature | Hand-curated SMARTS substructure patterns | Offline fallback when Tiers 1 & 2 return few results; covers kinase hinge binders, GPCR motifs, enzyme inhibitor scaffolds |
+
+#### External APIs Queried (All Free, No API Key Required)
+
+| API | Version | Usage |
+|-----|---------|-------|
+| **ChEMBL** | 34 | Compound similarity + bioactivity for target prediction |
+| **STRING DB** | 11.5 | Protein-protein interaction network construction (species 9606 / human) |
+| **Reactome** | — | Pathway enrichment analysis |
+| **KEGG** | — | Pathway enrichment analysis |
+| **Open Targets Platform** | GraphQL | Gene → disease association mapping with therapeutic area grouping |
+
+#### Pipeline Modules
+
+| Module | What It Does |
+|--------|-------------|
+| `target_prediction.py` | Orchestrates the 3-tier pipeline; deduplicates, ranks, and returns targets with prediction source metadata |
+| `chembl_client.py` | ChEMBL REST API client with batch target resolution and caching |
+| `similarity_engine.py` | Local Morgan FP similarity engine using SEA (Similarity Ensemble Approach) method |
+| `ppi_network.py` | STRING DB graph builder with centrality metrics, community detection, and hub gene identification; 70+ curated fallback interactions |
+| `pathway_enrichment.py` | Fisher's exact test with Benjamini-Hochberg FDR correction; 24 curated pathway fallbacks |
+| `disease_mapping.py` | Open Targets GraphQL client; 33 curated disease fallbacks; grouped by therapeutic area |
+
+#### Animated Pipeline Stepper (Frontend)
+When analysis runs, a **4-step animated pipeline visualization** shows real-time progress:
+
+1. 🔵 **Target Prediction** — "Querying ChEMBL API, running Morgan fingerprint similarity & SMARTS pharmacophore matching…"
+2. 🟣 **PPI Network Construction** — "Building protein-protein interaction network from STRING DB…"
+3. 🟢 **Pathway Enrichment** — "Enriching pathways via Reactome & KEGG databases…"
+4. 🔴 **Disease Mapping** — "Mapping disease associations from Open Targets platform…"
+
+Each step card transitions through `waiting → running → complete` with:
+- Framer Motion spring animations and sliding progress bars
+- Live result counts (e.g., "17 targets identified", "35 PPI edges")
+- Per-step timing display (e.g., "12.4s")
+- **Prediction Tier Breakdown** panel showing ChEMBL / Similarity / Pharmacophore hit counts
+- Overall progress bar with gradient fill
+
+#### Results Exploration (5 Tabs)
+
+| Tab | Content |
+|-----|---------|
+| **Targets** | Full target table with gene name, protein name, UniProt ID, target class, probability bar, and prediction source |
+| **PPI Network** | Interactive force-directed SVG graph (drug targets = blue, hub genes = amber, interactors = indigo) with node click |
+| **Pathways** | Ranked pathway list with p-values, FDR, gene count badges, source (KEGG/Reactome) |
+| **Diseases** | Disease table with therapeutic area pills, score bars, associated gene badges |
+| **Topology** | Network metrics: density, connected components, hub genes by degree, degree centrality distribution |
+
+#### Verified Results (Aspirin — `CC(=O)Oc1ccccc1C(=O)O`)
+| Metric | Count |
+|--------|-------|
+| Predicted Targets | 17 (ChEMBL: 6, Pharmacophore: 11) |
+| PPI Network | 17 nodes, 35 edges |
+| Enriched Pathways | 59 |
+| Disease Associations | 25 |
+
 ### 🎙️ PersonaPlex Voice AI Assistant
 - **Floating draggable orb** on every page — tap to speak naturally
 - **PersonaPlex pipeline**: Browser ASR → Cerebras AI (with function calling) → Microsoft Edge Neural TTS
@@ -165,6 +234,12 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 | **XGBoost** | Gradient boosting ensemble member |
 | **scikit-learn** | RandomForest ensemble member, preprocessing |
 | **Optuna** | Bayesian hyperparameter tuning |
+| **NetworkX** | Graph construction & analysis (PPI networks, centrality, community detection) |
+| **SciPy** | Statistical tests (hypergeometric / Fisher's exact, FDR correction) |
+| **ChEMBL REST API** | Live compound similarity search + bioactivity data for target prediction |
+| **STRING DB API** | Protein-protein interaction data (human, score ≥ 0.4) |
+| **Reactome + KEGG APIs** | Pathway enrichment analysis |
+| **Open Targets GraphQL** | Gene-disease association mapping |
 | **Cerebras AI** | LLM reasoning engine (llama3.1-8b) |
 | **Edge TTS** | Microsoft Edge Neural text-to-speech |
 | **NVIDIA Riva** | Enterprise ASR/TTS (optional, browser fallback) |
@@ -196,15 +271,17 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 │  └──────┬─────┘  └─────┬─────┘  └──────┬──────┘  └──────┬─────────┘ │
 │         │              │               │                │           │
 │  ┌──────┴───────────────────────────────────────────────────────────┐ │
-│  │  Reaction Lab (Three.js)                                         │ │
+│  │  Reaction Lab (Three.js) + Network Pharmacology Pipeline UI     │ │
 │  │  AtomMesh · BondMesh · ConformerAnimator · ReactionAnimator      │ │
 │  │  VibrationEngine · VideoRecorder · smiles-to-3d (client)         │ │
+│  │  Animated Pipeline Stepper (Framer Motion) · NetworkGraph (SVG)  │ │
 │  └──────┬───────────────────────────────────────────────────────────┘ │
 │         │                                                             │
 │  ┌──────▼──────────────────────────────────────────────────────────┐ │
 │  │                    Next.js API Routes                           │ │
 │  │  /api/predict   /api/predict/compare   /api/copilot             │ │
 │  │  /api/predict/save   /api/descriptors  /api/copilot/summary     │ │
+│  │  /api/network-pharmacology  (targets | ppi | pathways | diseases)│ │
 │  └──────────┬──────────────────────────────────────┬───────────────┘ │
 └─────────────┼──────────────────────────────────────┼────────────────┘
               │                                      │
@@ -227,6 +304,15 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
    │  │ RandomForest +     │  │
    │  │ XGBoost (8 models) │  │
    │  │ + 4 legacy DT      │  │
+   │  └───────────────────┘  │
+   │  ┌───────────────────┐  │
+   │  │ Network Pharmacol. │  │
+   │  │ ┌─ ChEMBL API     │  │
+   │  │ ├─ Morgan FP Sim.  │  │
+   │  │ ├─ SMARTS Pharm.   │  │
+   │  │ ├─ STRING DB (PPI) │  │
+   │  │ ├─ Reactome/KEGG   │  │
+   │  │ └─ Open Targets    │  │
    │  └───────────────────┘  │
    │  ┌───────────────────┐  │
    │  │ 3D Geometry Engine │  │
@@ -356,6 +442,9 @@ Navigate to `/simulations/demo` for a pre-loaded **Aspirin** simulation that wor
 ### Reaction Lab
 Navigate to `/reactions` for the interactive Three.js 3D reaction visualization lab — load preset reactions, adjust temperature, toggle visualization modes, and record video.
 
+### Network Pharmacology
+Navigate to `/network-pharmacology` to run a full **systems pharmacology pipeline** — select a molecule from your library (or paste a SMILES), watch the animated 4-step pipeline (targets → PPI → pathways → diseases), then explore results across 5 interactive tabs including a force-directed PPI network graph.
+
 ### Sample SMILES to Try
 | Compound | SMILES |
 |----------|--------|
@@ -371,7 +460,7 @@ Navigate to `/reactions` for the interactive Three.js 3D reaction visualization 
 
 ## 📡 API Reference
 
-### ML + Voice + 3D API (Flask — Port 5001)
+### ML + Voice + 3D + Network Pharmacology API (Flask — Port 5001)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -384,7 +473,14 @@ Navigate to `/reactions` for the interactive Three.js 3D reaction visualization 
 | `POST` | `/generate-reaction-3d` | Generate reaction 3D geometries with atom padding for morphing |
 | `POST` | `/qspr/lookup` | Look up a molecule in training datasets by SMILES or name |
 | `GET` | `/qspr/stats` | Training dataset statistics (sizes, ranges, distributions) |
+| `POST` | `/network/targets` | Predict protein targets for a SMILES (3-tier pipeline) |
+| `POST` | `/network/ppi` | Build PPI network from gene list (STRING DB) |
+| `POST` | `/network/pathways` | Pathway enrichment from gene list (Reactome + KEGG) |
+| `POST` | `/network/diseases` | Disease mapping from gene list (Open Targets) |
+| `POST` | `/network/full-analysis` | Complete pipeline: targets → PPI → pathways → diseases |
 | `POST` | `/voice/session` | Create a PersonaPlex voice session |
+| `GET` | `/voice/session/:id` | Get voice session status |
+| `DELETE` | `/voice/session/:id` | Delete / end a voice session |
 | `POST` | `/voice/process` | Process a voice query (ASR → Cerebras → tools → response) |
 | `POST` | `/voice/tts` | Text-to-speech via Edge TTS or Riva |
 | `GET` | `/voice/status` | Voice subsystem status (Cerebras, Riva, Edge TTS) |
@@ -399,6 +495,7 @@ Navigate to `/reactions` for the interactive Three.js 3D reaction visualization 
 | `POST` | `/api/descriptors` | Proxy to ML descriptors endpoint (mock fallback) |
 | `POST` | `/api/copilot` | AI chat with context-aware function calling |
 | `POST` | `/api/copilot/summary` | Short 2–3 sentence compound analysis |
+| `POST` | `/api/network-pharmacology` | Proxy to NP endpoints (action: `full` / `targets` / `ppi` / `pathways` / `diseases`; 120s timeout; mock fallback) |
 
 ### Example Requests
 
@@ -430,6 +527,26 @@ curl -X POST http://localhost:5001/drug-likeness \
 
 # Dataset statistics
 curl http://localhost:5001/qspr/stats
+
+# Network Pharmacology — predict targets
+curl -X POST http://localhost:5001/network/targets \
+  -H "Content-Type: application/json" \
+  -d '{"smiles": "CC(=O)Oc1ccccc1C(=O)O"}'
+
+# Network Pharmacology — build PPI network
+curl -X POST http://localhost:5001/network/ppi \
+  -H "Content-Type: application/json" \
+  -d '{"genes": ["PTGS1", "PTGS2", "MAPK1", "AHR", "PPARG"]}'
+
+# Network Pharmacology — pathway enrichment
+curl -X POST http://localhost:5001/network/pathways \
+  -H "Content-Type: application/json" \
+  -d '{"genes": ["PTGS1", "PTGS2", "MAPK1", "AHR", "PPARG"]}'
+
+# Network Pharmacology — full analysis (all steps)
+curl -X POST http://localhost:5001/network/full-analysis \
+  -H "Content-Type: application/json" \
+  -d '{"smiles": "CC(=O)Oc1ccccc1C(=O)O"}'
 ```
 
 ---
@@ -541,9 +658,10 @@ inSillico/
 │   │   │   │   ├── compare/        #   Ensemble vs legacy comparison
 │   │   │   │   └── save/           #   Persist results to Supabase
 │   │   │   ├── descriptors/        # Molecular descriptor proxy (mock fallback)
-│   │   │   └── copilot/            # AI assistant endpoints
-│   │   │       ├── route.ts        #   Chat with function calling
-│   │   │       └── summary/        #   Quick compound analysis
+│   │   │   ├── copilot/            # AI assistant endpoints
+│   │   │   │   ├── route.ts        #   Chat with function calling
+│   │   │   │   └── summary/        #   Quick compound analysis
+│   │   │   └── network-pharmacology/ # 🕸️ NP proxy (action routing, 120s timeout, mock fallback)
 │   │   ├── auth/                   # Login & Signup pages
 │   │   ├── copilot/                # AI Chat interface
 │   │   ├── dashboard/              # User dashboard with metrics
@@ -553,6 +671,8 @@ inSillico/
 │   │   │   ├── page.tsx            #   Simulation list
 │   │   │   ├── new/                #   New simulation wizard
 │   │   │   └── demo/               #   Demo mode (no ML server needed)
+│   │   ├── network-pharmacology/   # 🕸️ Network Pharmacology Pipeline
+│   │   │   └── page.tsx            #   Animated stepper + 5-tab results
 │   │   ├── results/                # Results list, detail, compare, export
 │   │   │   ├── page.tsx            #   Results list with live predictions
 │   │   │   ├── [id]/               #   Single result detail
@@ -576,6 +696,7 @@ inSillico/
 │   │   │   ├── constants.ts        #   Element colors, radii, scene defaults
 │   │   │   ├── types.ts            #   TypeScript interfaces
 │   │   │   └── index.ts            #   Public API exports
+│   │   ├── network-graph.tsx       # 🕸️ Force-directed SVG PPI graph (351 lines)
 │   │   ├── voice-assistant.tsx     # 🎙️ PersonaPlex floating voice orb
 │   │   ├── molecule-viewer-3d.tsx  # 3Dmol.js 3D rendering
 │   │   ├── molecule-drawer.tsx     # Canvas 2D drawing tool
@@ -629,6 +750,17 @@ inSillico/
 │   │   ├── session_manager.py     #   Voice session lifecycle
 │   │   ├── audio_processor.py     #   Audio format handling
 │   │   └── riva_client.py         #   NVIDIA Riva ASR/TTS client
+│   ├── network_pharmacology/       # 🕸️ Network Pharmacology Package
+│   │   ├── __init__.py            #   Exports: predict_targets, build_ppi_network, enrich_pathways, map_diseases
+│   │   ├── target_prediction.py   #   3-tier target prediction orchestrator (552 lines)
+│   │   ├── chembl_client.py       #   ChEMBL 34 REST API client — similarity + bioactivity (363 lines)
+│   │   ├── similarity_engine.py   #   Morgan FP SEA similarity engine (290 lines)
+│   │   ├── ppi_network.py         #   STRING DB PPI builder + centrality metrics (435 lines)
+│   │   ├── pathway_enrichment.py  #   Reactome/KEGG enrichment + Fisher/FDR (475 lines)
+│   │   ├── disease_mapping.py     #   Open Targets GraphQL disease mapper (350 lines)
+│   │   └── data/
+│   │       ├── drug_targets.csv   #   ~120 approved drugs × ~200 target interactions
+│   │       └── build_reference_db.py  # Script to rebuild reference DB from ChEMBL
 │   ├── data/                       # MoleculeNet CSV datasets
 │   │   ├── esol.csv               #   1,128 compounds (solubility)
 │   │   ├── lipophilicity.csv      #   4,200 compounds (logD)
@@ -693,6 +825,8 @@ Railway config (`railway.json`):
 | **Cost** | Free & open source | $10K–$100K/yr licenses |
 | **AI Assistant** | Context-aware copilot with function calling + voice | None |
 | **ML Engine** | QSPR v2.0 ensemble (RF + XGB, ECFP4) | Single model |
+| **Network Pharmacology** | Full pipeline: ChEMBL → STRING → Reactome/KEGG → Open Targets with animated stepper | Manual multi-tool workflow |
+| **Target Prediction** | 3-tier real-data pipeline (ChEMBL API + Morgan FP + SMARTS) | Database lookup only |
 | **3D Visualization** | Three.js engine + 3Dmol.js (reactions, conformers, vibration) | Static images |
 | **Voice interaction** | PersonaPlex (Cerebras + Edge TTS + Riva) | N/A |
 | **Dataset lookup** | Query 8,862 measured values mid-conversation | Manual search |
@@ -704,14 +838,20 @@ Railway config (`railway.json`):
 
 ## 🚧 Roadmap
 
+- [x] Network Pharmacology pipeline (ChEMBL, STRING DB, Reactome/KEGG, Open Targets)
+- [x] 3-Tier real-data target prediction (ChEMBL API → Morgan FP similarity → SMARTS pharmacophore)
+- [x] Animated pipeline stepper with per-step progress tracking
+- [x] Interactive force-directed PPI network graph
+- [x] PubChem / ChEMBL compound search integration
 - [ ] ADMET expansion (CYP inhibition, plasma protein binding, hERG)
 - [ ] Retrosynthesis pathway suggestion
 - [ ] Molecular docking integration
 - [ ] Batch prediction (CSV of 1000+ SMILES)
 - [ ] GNN-based property prediction (GCN, AttentiveFP)
 - [ ] Collaborative workspaces (team projects)
-- [ ] PubChem / ChEMBL compound search integration
 - [ ] QSAR model builder (no-code)
+- [ ] Multi-target drug design optimization
+- [ ] Polypharmacology analysis dashboard
 
 ---
 
