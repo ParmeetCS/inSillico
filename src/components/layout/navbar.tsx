@@ -74,70 +74,10 @@ export function Navbar() {
     if (isAuthPage) return null;
 
     return (
-<<<<<<< HEAD
-        <header
-            style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                height: "var(--header-height)",
-                zIndex: 50,
-                background: "rgba(2, 6, 23, 0.85)",
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                borderBottom: "1px solid var(--glass-border)",
-            }}
-        >
-            <nav
-                style={{
-                    maxWidth: 1400,
-                    margin: "0 auto",
-                    padding: "0 24px",
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                }}
-            >
-                {/* Logo */}
-                <Link
-                    href="/"
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        textDecoration: "none",
-                        color: "var(--text-primary)",
-                    }}
-                >
-                    <div
-                        style={{
-                            width: 320,
-                            height: 70,
-                            borderRadius: 10,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            overflow: "hidden",
-                        }}
-                    >
-                        <Image
-                            src="/insilico-navbar-logo.svg"
-                            alt="InSilico"
-                            width={320}
-                            height={70}
-                            style={{ objectFit: "contain" }}
-                            priority
-                        />
-                    </div>
-                </Link>
-=======
         <>
             <header className={`navbar-header ${scrolled ? "navbar-scrolled" : ""}`}>
                 {/* Animated top glow line */}
                 <div className="navbar-glow-line" />
->>>>>>> 16ebbbfa46c389a16af5c73efe6c81a860fda2ed
 
                 <nav className="navbar-inner">
                     {/* Logo */}
