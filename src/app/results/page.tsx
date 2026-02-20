@@ -9,7 +9,7 @@ import {
     Beaker, Shield, Droplets, FlaskConical, Activity,
     ChevronRight, Search, Download, GitCompareArrows, X, Check,
     BarChart3, Zap, Eye, Calendar, Sparkles, Share2, FileText,
-    Loader2, RefreshCw, Bot,
+    Loader2, RefreshCw, Bot, GitBranch,
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/lib/auth-context";
@@ -775,6 +775,15 @@ export default function ResultsIndexPage() {
                                                             style={{ padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10 }}
                                                         >
                                                             <Download size={14} />
+                                                        </Link>
+                                                        <Link
+                                                            href={`/network-pharmacology?smiles=${encodeURIComponent(sim.smiles)}&name=${encodeURIComponent(sim.name)}`}
+                                                            className="btn-secondary"
+                                                            onClick={() => haptic("light")}
+                                                            style={{ padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10, display: "flex", alignItems: "center", gap: 4 }}
+                                                            title="Network Pharmacology"
+                                                        >
+                                                            <GitBranch size={14} />
                                                         </Link>
                                                     </div>
                                                 );

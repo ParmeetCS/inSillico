@@ -19,6 +19,7 @@ import {
     Coins,
     Sparkles,
     ChevronDown,
+    Share2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { haptic } from "@/lib/haptics";
@@ -29,6 +30,7 @@ const navLinks = [
     { href: "/projects", label: "Projects", icon: FolderOpen },
     { href: "/molecules/new", label: "Molecules", icon: Atom },
     { href: "/reactions", label: "Reaction Lab", icon: FlaskConical },
+    { href: "/network-pharmacology", label: "Network Pharma", icon: Share2 },
     { href: "/simulations", label: "Simulations", icon: Activity },
     { href: "/results", label: "Results", icon: FileBarChart },
     { href: "/copilot", label: "AI Copilot", icon: Sparkles },

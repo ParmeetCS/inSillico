@@ -1278,6 +1278,166 @@ def generate_reaction_3d():
     })
 
 
+# ═══════════════════════════════════════════════════════════════
+#  Network Pharmacology Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+from network_pharmacology.target_prediction import predict_targets
+from network_pharmacology.ppi_network import build_ppi_network
+from network_pharmacology.pathway_enrichment import enrich_pathways
+from network_pharmacology.disease_mapping import map_diseases
+
+
+@app.route("/network/targets", methods=["POST"])
+def network_targets():
+    """Predict protein targets for a SMILES compound."""
+    data = request.get_json(force=True)
+    smiles = data.get("smiles", "")
+    top_k = data.get("top_k", 20)
+
+    if not smiles:
+        return jsonify({"error": "Missing 'smiles' parameter"}), 400
+
+    try:
+        result = predict_targets(smiles, top_k=top_k)
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Target prediction failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/ppi", methods=["POST"])
+def network_ppi():
+    """Build PPI network from a list of genes."""
+    data = request.get_json(force=True)
+    genes = data.get("genes", [])
+    min_score = data.get("min_score", 400)
+
+    if not genes:
+        return jsonify({"error": "Missing 'genes' parameter"}), 400
+
+    try:
+        result = build_ppi_network(genes, min_score=min_score)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"PPI network construction failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/pathways", methods=["POST"])
+def network_pathways():
+    """Perform pathway enrichment analysis for a gene list."""
+    data = request.get_json(force=True)
+    genes = data.get("genes", [])
+    p_threshold = data.get("p_threshold", 0.05)
+
+    if not genes:
+        return jsonify({"error": "Missing 'genes' parameter"}), 400
+
+    try:
+        result = enrich_pathways(genes, p_threshold=p_threshold)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Pathway enrichment failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/diseases", methods=["POST"])
+def network_diseases():
+    """Map genes to associated diseases."""
+    data = request.get_json(force=True)
+    genes = data.get("genes", [])
+    top_k = data.get("top_k", 25)
+
+    if not genes:
+        return jsonify({"error": "Missing 'genes' parameter"}), 400
+
+    try:
+        result = map_diseases(genes, top_k=top_k)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Disease mapping failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/full-analysis", methods=["POST"])
+def network_full_analysis():
+    """
+    Run the complete Network Pharmacology pipeline:
+      1. Predict targets from SMILES
+      2. Build PPI network from targets
+      3. Enrich pathways
+      4. Map diseases
+    Returns combined result in one response.
+    """
+    data = request.get_json(force=True)
+    smiles = data.get("smiles", "")
+
+    if not smiles:
+        return jsonify({"error": "Missing 'smiles' parameter"}), 400
+
+    try:
+        # Step 1: Target prediction
+        targets_result = predict_targets(smiles, top_k=data.get("top_k", 20))
+        if "error" in targets_result:
+            return jsonify({"error": targets_result["error"]}), 400
+
+        gene_list = targets_result.get("gene_list", [])
+
+        if not gene_list:
+            return jsonify({
+                "smiles": smiles,
+                "targets": targets_result,
+                "ppi_network": {"nodes": [], "edges": [], "metrics": {}},
+                "pathways": {"pathways": [], "pathway_count": 0},
+                "diseases": {"diseases": [], "disease_count": 0},
+                "summary": "No targets predicted for this compound.",
+            })
+
+        # Step 2: PPI network
+        ppi_result = build_ppi_network(gene_list, min_score=data.get("min_score", 400))
+
+        # Expand gene list with hub genes from PPI
+        hub_genes = ppi_result.get("metrics", {}).get("hub_genes", [])
+        expanded_genes = list(dict.fromkeys(gene_list + hub_genes))
+
+        # Step 3: Pathway enrichment
+        pathways_result = enrich_pathways(expanded_genes, p_threshold=data.get("p_threshold", 0.05))
+
+        # Step 4: Disease mapping
+        diseases_result = map_diseases(expanded_genes, top_k=data.get("disease_top_k", 25))
+
+        # Build summary
+        target_count = targets_result.get("target_count", 0)
+        pathway_count = pathways_result.get("pathway_count", 0)
+        disease_count = diseases_result.get("disease_count", 0)
+        top_areas = list(diseases_result.get("therapeutic_areas", {}).keys())[:3]
+
+        summary = (
+            f"Identified {target_count} potential protein targets, "
+            f"{ppi_result.get('gene_count', 0)} nodes in PPI network, "
+            f"{pathway_count} enriched pathways, and "
+            f"{disease_count} associated diseases."
+        )
+        if top_areas:
+            summary += f" Top therapeutic areas: {', '.join(top_areas)}."
+
+        return jsonify({
+            "smiles": smiles,
+            "targets": targets_result,
+            "ppi_network": ppi_result,
+            "pathways": pathways_result,
+            "diseases": diseases_result,
+            "summary": summary,
+        })
+
+    except Exception as e:
+        logger.error(f"Full network analysis failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ═══════════════════════════════════════
 #  Model Loading (runs for both gunicorn and direct execution)
 # ═══════════════════════════════════════
@@ -1342,5 +1502,10 @@ if __name__ == "__main__":
     logger.info(f"  POST /voice/process        — Process voice query")
     logger.info(f"  POST /voice/tts            — Text-to-speech")
     logger.info(f"  GET  /voice/status         — Voice subsystem status")
+    logger.info(f"  POST /network/targets      — Predict protein targets")
+    logger.info(f"  POST /network/ppi          — Build PPI network")
+    logger.info(f"  POST /network/pathways     — Pathway enrichment")
+    logger.info(f"  POST /network/diseases     — Disease mapping")
+    logger.info(f"  POST /network/full-analysis— Full network pharmacology")
 
     app.run(host="0.0.0.0", port=FLASK_PORT, debug=False)
