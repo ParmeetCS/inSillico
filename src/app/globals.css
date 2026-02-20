@@ -41,7 +41,11 @@
   --gradient-success: linear-gradient(135deg, #10b981, #06b6d4);
 
   /* Spacing */
+<<<<<<< HEAD
+  --header-height: 90px;
+=======
   --header-height: 64px;
+>>>>>>> 16ebbbfa46c389a16af5c73efe6c81a860fda2ed
 }
 
 * {
