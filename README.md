@@ -17,6 +17,7 @@
   <a href="#-demo">Demo</a> •
   <a href="#-api-reference">API</a> •
   <a href="#-ml-models">ML Models</a> •
+  <a href="#-deployment">Deployment</a> •
   <a href="#-available-scripts">Scripts</a> •
   <a href="#-team">Team</a>
 </p>
@@ -24,12 +25,14 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Next.js-16.1-black?logo=nextdotjs" />
   <img src="https://img.shields.io/badge/React-19-61dafb?logo=react" />
+  <img src="https://img.shields.io/badge/Three.js-3D_Engine-000000?logo=threedotjs" />
   <img src="https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-3ecf8e?logo=supabase" />
   <img src="https://img.shields.io/badge/Python-ML%20Backend-3776ab?logo=python" />
   <img src="https://img.shields.io/badge/QSPR-v2.0_Ensemble-ff6600" />
   <img src="https://img.shields.io/badge/RDKit-ECFP4_2048-005571" />
   <img src="https://img.shields.io/badge/Cerebras-AI_Copilot-8b5cf6" />
   <img src="https://img.shields.io/badge/PersonaPlex-Voice_AI-22c55e" />
+  <img src="https://img.shields.io/badge/Docker-Railway-0db7ed?logo=docker" />
 </p>
 
 ---
@@ -38,7 +41,7 @@
 
 Drug discovery is one of the slowest, most expensive pipelines in healthcare — taking **10–15 years** and costing **$2.6 billion+** per approved drug. Early-stage researchers lack access to fast, intelligent tools that can predict molecular properties, flag ADMET risks, and suggest lead optimizations — all in one place.
 
-**InSilico Formulator** solves this by putting an AI-powered drug formulation lab directly in the browser — combining ML-based property prediction, interactive molecular visualization, and a context-aware AI copilot that reasons like a senior medicinal chemist.
+**InSilico Formulator** solves this by putting an AI-powered drug formulation lab directly in the browser — combining ML-based property prediction, interactive 3D molecular visualization, a reaction animation engine, and a context-aware AI copilot that reasons like a senior medicinal chemist.
 
 ---
 
@@ -51,6 +54,7 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 - Drug-likeness assessment: Lipinski Rule-of-Five, Veber rules, Ghose filter + structural alert screening (PAINS/Brenk)
 - **QSPR Dataset Lookup** — query training datasets for experimentally measured values by SMILES or compound name
 - Each property classified as `optimal` / `moderate` / `poor` with color-coded insights
+- **Mock fallback** — predictions and descriptors work even without the ML server via client-side mock data
 
 ### 🧪 Multiple Molecule Input Methods
 | Method | Description |
@@ -60,14 +64,27 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 | **Ketcher Editor** | Professional-grade EPAM Ketcher molecule editor with SMILES import/export |
 | **File Upload** | Batch molecular input support |
 
+### ⚗️ Reaction Lab (Three.js 3D Engine)
+- Full **Three.js-powered molecular visualization engine** with custom rendering pipeline
+- **3 visualization modes**: Ball-and-Stick, Space-Filling, Wireframe
+- **Reaction animations** — watch bonds form and break in real-time with smooth morphing transitions
+- **Conformer animation** — play through multi-conformer frames with interpolation
+- **Thermal vibration simulation** — temperature-responsive atom motion (0–5000 K)
+- **Preset reactions**: Dehydration, Fischer Esterification, and more with one-click load
+- **Video recording** — capture WebM recordings of animations and download directly
+- **Auto-rotation**, zoom, pan via OrbitControls
+- 3D geometry from RDKit backend (`/generate-3d`) with MMFF94 optimization, or client-side `smiles-to-3d.ts` fallback
+
 ### 📊 Rich Visualization Suite
 | Component | Technology | What It Does |
 |-----------|-----------|-------------|
 | **3D Molecule Viewer** | 3Dmol.js | Interactive rendering — rotate, zoom, fullscreen, spin |
+| **Three.js Molecular Scene** | Three.js | Custom engine — ball-stick, space-filling, wireframe, reactions, conformers |
 | **Radar Property Chart** | Plotly.js | LogP, MW, HBD, HBA, TPSA, RotBonds at a glance |
 | **Drug-Likeness Gauge** | Framer Motion | Animated Lipinski Rule-of-Five pass/fail dial |
 | **Toxicity Gauges** | Plotly.js | Per-endpoint safety visualizations |
 | **Solubility Curve** | Plotly.js | pH-dependent solubility profile |
+| **Ballpit Background** | Three.js | Interactive 3D particle background on the landing page |
 
 ### ⚔️ Model Comparison & QSPR Dataset Access
 - Side-by-side **Ensemble vs Legacy** prediction comparison
@@ -75,9 +92,9 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 - Compare multiple compounds across all predicted properties
 - **Live dataset lookup** — query experimentally measured values by SMILES or compound name across 8,862 training compounds
 
-### 🤖 AI
+### 🤖 AI Copilot
 - Conversational AI assistant with deep **medicinal chemistry, ADMET, SAR, and PK/PD** expertise
-- **Context-aware** — automatically ingests your compound library, simulations & prediction results
+- **Context-aware** — automatically ingests your compound library, simulations & prediction results via RAG context builder
 - **Function calling**: runs live predictions, compares molecules, and queries QSPR datasets mid-conversation
 - **Analytical reasoning**: identifies patterns, flags red flags, spots structure-property relationships
 - Powered by **Cerebras AI (llama3.1-8b)** — ultra-fast inference
@@ -113,6 +130,9 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 - **Skeleton loading states** for all async data fetches
 - **Haptic feedback** patterns (light, medium, heavy, success, error)
 - **Toast notifications** with auto-dismiss
+- **Lottie animations** — hero section and flask animation assets
+- **Inter + Outfit** Google Fonts typography
+- **Interactive 3D ballpit background** on the landing page
 
 ---
 
@@ -125,11 +145,13 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 | **React 19** | UI library |
 | **TypeScript** | Type safety |
 | **Tailwind CSS 4** | Utility-first styling |
+| **Three.js** | Custom 3D molecular visualization engine |
 | **Framer Motion** | Animations & transitions |
 | **Recharts** | Dashboard charts |
 | **Plotly.js** | Scientific visualizations |
-| **3Dmol.js** | 3D molecule rendering |
+| **3Dmol.js** | Quick 3D molecule rendering |
 | **Ketcher** | Molecular structure editor |
+| **Lottie React** | JSON-based animations |
 | **jsPDF** | Client-side PDF generation |
 | **Lucide React** | Icon system |
 
@@ -138,16 +160,24 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 |-----------|---------|
 | **Supabase** | Auth, PostgreSQL database, RLS |
 | **Flask** | Python ML API server (port 5001) |
-| **RDKit** | Morgan fingerprints (ECFP4) + physicochemical descriptors |
+| **RDKit** | Morgan fingerprints (ECFP4) + physicochemical descriptors + 3D conformer generation |
 | **XGBoost** | Gradient boosting ensemble member |
 | **scikit-learn** | RandomForest ensemble member, preprocessing |
 | **Optuna** | Bayesian hyperparameter tuning |
 | **Cerebras AI** | LLM reasoning engine (llama3.1-8b) |
 | **Edge TTS** | Microsoft Edge Neural text-to-speech |
-| **requests** | HTTP client for Cerebras AI bridge |
 | **NVIDIA Riva** | Enterprise ASR/TTS (optional, browser fallback) |
 | **PersonaPlex** | Voice AI session pipeline |
 | **python-dotenv** | Auto-loads `.env.local` for API keys |
+
+### DevOps & Deployment
+| Technology | Purpose |
+|-----------|---------|
+| **Docker** | ML backend containerization |
+| **Railway** | ML server cloud deployment |
+| **Vercel** | Frontend deployment (Next.js) |
+| **Gunicorn** | Production WSGI server (2 workers, 120s timeout) |
+| **Concurrently** | Runs Next.js + Flask in parallel during dev |
 
 ---
 
@@ -164,10 +194,16 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 │  │  Ketcher)  │  │  T, P)    │  │             │  │ Riva fallback  │  │
 │  └──────┬─────┘  └─────┬─────┘  └──────┬──────┘  └──────┬─────────┘ │
 │         │              │               │                │           │
-│  ┌──────▼──────────────▼───────────────▼────────────────▼──────────┐ │
+│  ┌──────┴───────────────────────────────────────────────────────────┐ │
+│  │  Reaction Lab (Three.js)                                         │ │
+│  │  AtomMesh · BondMesh · ConformerAnimator · ReactionAnimator      │ │
+│  │  VibrationEngine · VideoRecorder · smiles-to-3d (client)         │ │
+│  └──────┬───────────────────────────────────────────────────────────┘ │
+│         │                                                             │
+│  ┌──────▼──────────────────────────────────────────────────────────┐ │
 │  │                    Next.js API Routes                           │ │
 │  │  /api/predict   /api/predict/compare   /api/copilot             │ │
-│  │  /api/predict/save                     /api/copilot/summary     │ │
+│  │  /api/predict/save   /api/descriptors  /api/copilot/summary     │ │
 │  └──────────┬──────────────────────────────────────┬───────────────┘ │
 └─────────────┼──────────────────────────────────────┼────────────────┘
               │                                      │
@@ -190,6 +226,12 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
    │  │ RandomForest +     │  │
    │  │ XGBoost (8 models) │  │
    │  │ + 4 legacy DT      │  │
+   │  └───────────────────┘  │
+   │  ┌───────────────────┐  │
+   │  │ 3D Geometry Engine │  │
+   │  │ /generate-3d       │  │
+   │  │ /generate-reaction │  │
+   │  │ MMFF94 + conformer │  │
    │  └───────────────────┘  │
    │  ┌───────────────────┐  │
    │  │ PersonaPlex Voice  │  │
@@ -225,7 +267,7 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 ### Prerequisites
 
 - **Node.js** ≥ 18
-- **Python** ≥ 3.10 with **RDKit** (`conda install -c conda-forge rdkit`)
+- **Python** ≥ 3.10 with **RDKit** (`conda install -c conda-forge rdkit` or `pip install rdkit`)
 - **Supabase** project ([supabase.com](https://supabase.com))
 
 ### 1. Clone & Install
@@ -283,8 +325,12 @@ molecules (id UUID, user_id UUID, project_id UUID, name TEXT, smiles TEXT, formu
 
 -- Computation results
 simulations (id UUID, user_id UUID, molecule_id UUID, status TEXT, config_json JSONB, result_json JSONB, compute_cost INT)
-prediction_results (id UUID, user_id UUID, smiles TEXT, model_type TEXT, predictions JSONB, created_at TIMESTAMPTZ)
+prediction_results (id UUID, smiles TEXT, molecule_name TEXT, formula TEXT, molecular_weight REAL,
+                    properties JSONB, toxicity_screening JSONB, confidence REAL, runtime_ms INT,
+                    status TEXT, created_at TIMESTAMPTZ)
 ```
+
+> A ready-to-run migration script is included at `supabase_migration_prediction_results.sql`.
 
 ### 4. Run
 
@@ -306,6 +352,9 @@ Visit **[http://localhost:3000](http://localhost:3000)** 🎉
 ### Built-in Demo Mode
 Navigate to `/simulations/demo` for a pre-loaded **Aspirin** simulation that works even without the ML server — perfect for quick demos and judging sessions.
 
+### Reaction Lab
+Navigate to `/reactions` for the interactive Three.js 3D reaction visualization lab — load preset reactions, adjust temperature, toggle visualization modes, and record video.
+
 ### Sample SMILES to Try
 | Compound | SMILES |
 |----------|--------|
@@ -314,12 +363,14 @@ Navigate to `/simulations/demo` for a pre-loaded **Aspirin** simulation that wor
 | Caffeine | `Cn1c(=O)c2c(ncn2C)n(C)c1=O` |
 | Paracetamol | `CC(=O)Nc1ccc(O)cc1` |
 | Metformin | `CN(C)C(=N)NC(=N)N` |
+| Ethanol | `CCO` |
+| Water | `O` |
 
 ---
 
 ## 📡 API Reference
 
-### ML + Voice API (Flask — Port 5001)
+### ML + Voice + 3D API (Flask — Port 5001)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -328,6 +379,8 @@ Navigate to `/simulations/demo` for a pre-loaded **Aspirin** simulation that wor
 | `POST` | `/predict` | Full QSPR ensemble property prediction from SMILES |
 | `POST` | `/descriptors` | Raw molecular descriptor computation (ECFP4 + physicochemical) |
 | `POST` | `/drug-likeness` | Lipinski, Veber, Ghose assessment + PAINS/Brenk alerts |
+| `POST` | `/generate-3d` | Generate 3D coordinates + conformers for Three.js viewer (RDKit + MMFF94) |
+| `POST` | `/generate-reaction-3d` | Generate reaction 3D geometries with atom padding for morphing |
 | `POST` | `/qspr/lookup` | Look up a molecule in training datasets by SMILES or name |
 | `GET` | `/qspr/stats` | Training dataset statistics (sizes, ranges, distributions) |
 | `POST` | `/voice/session` | Create a PersonaPlex voice session |
@@ -342,6 +395,7 @@ Navigate to `/simulations/demo` for a pre-loaded **Aspirin** simulation that wor
 | `POST` | `/api/predict` | Proxy to ML server with model type selection |
 | `POST` | `/api/predict/compare` | Ensemble vs legacy side-by-side comparison |
 | `POST` | `/api/predict/save` | Persist results to Supabase |
+| `POST` | `/api/descriptors` | Proxy to ML descriptors endpoint (mock fallback) |
 | `POST` | `/api/copilot` | AI chat with context-aware function calling |
 | `POST` | `/api/copilot/summary` | Short 2–3 sentence compound analysis |
 
@@ -352,6 +406,16 @@ Navigate to `/simulations/demo` for a pre-loaded **Aspirin** simulation that wor
 curl -X POST http://localhost:5001/predict \
   -H "Content-Type: application/json" \
   -d '{"smiles": "CC(=O)Oc1ccccc1C(=O)O"}'
+
+# Generate 3D coordinates for Three.js viewer
+curl -X POST http://localhost:5001/generate-3d \
+  -H "Content-Type: application/json" \
+  -d '{"smiles": "CCO", "num_conformers": 5}'
+
+# Generate reaction 3D geometries
+curl -X POST http://localhost:5001/generate-reaction-3d \
+  -H "Content-Type: application/json" \
+  -d '{"reactant_smiles": "CCO", "product_smiles": "C=C", "bond_changes": [{"type": "break", "atom1": 3, "atom2": 6}]}'
 
 # Look up measured values from training data
 curl -X POST http://localhost:5001/qspr/lookup \
@@ -387,7 +451,7 @@ The prediction engine uses a **weighted ensemble** of RandomForest and XGBoost, 
 ### Feature Engineering (2,056 dimensions)
 
 | Feature Type | Count | Details |
-|-------------|-------|---------|
+|-------------|-------|---------| 
 | **Morgan Fingerprints (ECFP4)** | 2,048 | Radius 2, captures substructural fragments of diameter 4 |
 | **Physicochemical Descriptors** | 8 | MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3 |
 
@@ -421,7 +485,7 @@ where $w = 0.2 + 0.5 \cdot \text{confidence}_{\text{QSPR}}$. At high QSPR confid
 #### Benchmark Results
 
 | Compound | LogP (Predicted) | LogP (Experimental) | Confidence | Drug-Likeness |
-|----------|-----------------|--------------------|-----------|--------------|
+|----------|-----------------|--------------------|-----------|--------------| 
 | **Aspirin** | 0.88 | 1.19 | 73.5% | A (82.0) |
 | **Caffeine** | −0.30 | −0.07 | 83.3% | A (82.0) |
 | **Ibuprofen** | 2.54 | 3.97 | 73.2% | A (82.0) |
@@ -436,7 +500,8 @@ ml/models/
 │   ├── bbbp_random_forest.joblib            ├── bbbp_xgboost.joblib
 │   ├── toxicity_random_forest.joblib        ├── toxicity_xgboost.joblib
 │   ├── *_ensemble.meta.json                 # Ensemble weights + eval metrics
-│   └── *.meta.json                          # Per-model metadata
+│   ├── *.meta.json                          # Per-model metadata
+│   └── training_report.json                 # Full training report
 ├── *_xgboost.joblib                         # Legacy v1 models (fallback)
 ├── *_decision_tree.joblib                   # Legacy v1 models (fallback)
 └── training_metadata.json                   # Legacy training metadata
@@ -471,41 +536,83 @@ inSillico/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── predict/            # ML prediction endpoints
+│   │   │   │   ├── route.ts        #   Main prediction proxy
+│   │   │   │   ├── compare/        #   Ensemble vs legacy comparison
+│   │   │   │   └── save/           #   Persist results to Supabase
+│   │   │   ├── descriptors/        # Molecular descriptor proxy (mock fallback)
 │   │   │   └── copilot/            # AI assistant endpoints
+│   │   │       ├── route.ts        #   Chat with function calling
+│   │   │       └── summary/        #   Quick compound analysis
 │   │   ├── auth/                   # Login & Signup pages
 │   │   ├── copilot/                # AI Chat interface
 │   │   ├── dashboard/              # User dashboard with metrics
 │   │   ├── molecules/new/          # 3-step molecule input wizard
+│   │   ├── reactions/              # ⚗️ Three.js 3D Reaction Lab
 │   │   ├── simulations/            # Simulation config, demo mode
+│   │   │   ├── page.tsx            #   Simulation list
+│   │   │   ├── new/                #   New simulation wizard
+│   │   │   └── demo/               #   Demo mode (no ML server needed)
 │   │   ├── results/                # Results list, detail, compare, export
+│   │   │   ├── page.tsx            #   Results list with live predictions
+│   │   │   ├── [id]/               #   Single result detail
+│   │   │   ├── compare/            #   Side-by-side comparison
+│   │   │   ├── export/             #   CSV/PDF export
+│   │   │   └── view/               #   Shareable report view
 │   │   ├── reports/                # PDF/CSV report viewer
-│   │   └── projects/               # Project management
+│   │   ├── projects/               # Project management
+│   │   ├── page.tsx                # Landing page (hero + ballpit)
+│   │   ├── layout.tsx              # Root layout (auth, navbar, voice orb)
+│   │   └── globals.css             # Design system (glassmorphism theme)
 │   ├── components/
+│   │   ├── molecular/              # 🧬 Three.js Molecular Engine
+│   │   │   ├── MolecularScene.tsx  #   Main React component (Three.js)
+│   │   │   ├── AtomMesh.ts         #   Atom rendering (sphere geometry)
+│   │   │   ├── BondMesh.ts         #   Bond rendering (cylinder geometry)
+│   │   │   ├── ConformerAnimator.ts#   Multi-conformer frame interpolation
+│   │   │   ├── ReactionAnimator.ts #   Reaction morphing animations
+│   │   │   ├── VibrationEngine.ts  #   Thermal vibration simulation
+│   │   │   ├── VideoRecorder.ts    #   WebM recording from canvas
+│   │   │   ├── constants.ts        #   Element colors, radii, scene defaults
+│   │   │   ├── types.ts            #   TypeScript interfaces
+│   │   │   └── index.ts            #   Public API exports
 │   │   ├── voice-assistant.tsx     # 🎙️ PersonaPlex floating voice orb
 │   │   ├── molecule-viewer-3d.tsx  # 3Dmol.js 3D rendering
 │   │   ├── molecule-drawer.tsx     # Canvas 2D drawing tool
 │   │   ├── molecule-sketcher.tsx   # Ketcher integration
 │   │   ├── drug-likeness-gauge.tsx # Animated Lipinski gauge
 │   │   ├── plotly-charts.tsx       # Radar, bar, gauge, curve charts
+│   │   ├── ballpit-background.tsx  # Three.js interactive particle BG
+│   │   ├── HeroAnimation.jsx      # Lottie hero animation wrapper
 │   │   ├── layout/navbar.tsx       # Navigation with glassmorphism
 │   │   └── ui/                     # Glass cards, toasts, badges, skeletons
-│   └── lib/
-│       ├── auth-context.tsx        # Auth provider + credit tracking
-│       ├── cerebras-client.ts      # Cerebras AI client wrapper
-│       ├── tool-definitions.ts     # AI function calling tool defs
-│       ├── rag-context.ts          # RAG context builder for AI
-│       ├── generate-pdf-report.ts  # jsPDF report generation
-│       ├── haptics.ts              # Haptic feedback patterns
-│       └── supabase/               # Client & server Supabase helpers
+│   ├── animations/                 # Lottie JSON animation assets
+│   │   ├── hero.json              #   Hero section animation
+│   │   └── Erlenmeyer flask.json  #   Flask animation
+│   ├── lib/
+│   │   ├── auth-context.tsx        # Auth provider + credit tracking
+│   │   ├── cerebras-client.ts      # Cerebras AI client wrapper
+│   │   ├── tool-definitions.ts     # AI function calling tool defs
+│   │   ├── rag-context.ts          # RAG context builder for AI
+│   │   ├── smiles-to-3d.ts        # Client-side SMILES → 3D coordinates
+│   │   ├── ml-mock.ts             # Mock ML predictions (offline fallback)
+│   │   ├── generate-pdf-report.ts  # jsPDF report generation
+│   │   ├── haptics.ts              # Haptic feedback patterns
+│   │   └── supabase/               # Client & server Supabase helpers
+│   └── middleware.ts               # Supabase auth session refresh
 ├── ml/
-│   ├── server.py                   # Flask ML + Voice API (port 5001)
+│   ├── server.py                   # Flask ML + Voice + 3D API (port 5001)
+│   ├── server_v1_legacy.py         # Legacy v1 server (deprecated)
 │   ├── descriptors.py              # RDKit ECFP4 + physicochemical engine
 │   ├── train_qspr.py              # QSPR v2.0 training pipeline
 │   ├── evaluate_qspr.py           # Model evaluation & metrics
 │   ├── train_models.py             # Legacy v1 training (deprecated)
+│   ├── download_moleculenet.py     # Dataset download utility
 │   ├── test_api.py                 # API integration tests
 │   ├── test_consistency.py         # Model consistency tests
+│   ├── requirements.txt            # Python dependencies
+│   ├── Dockerfile                  # Docker image for Railway deployment
 │   ├── qspr/                       # 📦 QSPR Pipeline Package
+│   │   ├── __init__.py            #   Package init + public API
 │   │   ├── config.py              #   Central config (datasets, hyperparams)
 │   │   ├── fingerprints.py        #   Morgan FP + descriptor computation
 │   │   ├── datasets.py            #   Dataset loading & preprocessing
@@ -516,6 +623,7 @@ inSillico/
 │   │   ├── splitting.py           #   Scaffold & random splitting
 │   │   └── serialization.py       #   Model save/load with metadata
 │   ├── personaplex/                # 🎙️ PersonaPlex Voice Pipeline
+│   │   ├── __init__.py            #   Package init
 │   │   ├── cerebras_bridge.py     #   Cerebras AI integration + tools
 │   │   ├── session_manager.py     #   Voice session lifecycle
 │   │   ├── audio_processor.py     #   Audio format handling
@@ -527,26 +635,69 @@ inSillico/
 │   │   └── clintox.csv            #   1,484 compounds (toxicity)
 │   └── models/                     # Pre-trained model files
 │       ├── qspr/                  #   QSPR v2.0 ensemble (.joblib + .meta.json)
-│       └── *.joblib               #   Legacy v1 models
-├── public/                         # Static assets
-└── package.json
+│       │   └── training_report.json #  Full training report
+│       ├── *.joblib               #   Legacy v1 models
+│       └── training_metadata.json #   Legacy training metadata
+├── public/                         # Static assets & logos
+├── railway.json                    # Railway deployment config
+├── supabase_migration_prediction_results.sql  # DB migration script
+├── package.json                    # npm scripts & dependencies
+└── tsconfig.json                   # TypeScript configuration
 ```
+
+---
+
+## 🚀 Deployment
+
+### Frontend → Vercel
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel --prod
+```
+
+Set environment variables in the Vercel dashboard:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `CEREBRAS_API_KEY`
+- `ML_BACKEND_URL` → your Railway deployment URL
+
+### ML Backend → Railway (Docker)
+
+The ML server includes a production-ready `Dockerfile` and `railway.json`:
+
+```bash
+# Local Docker build & test
+cd ml
+docker build -t insilico-ml .
+docker run -p 5001:5001 --env-file ../.env.local insilico-ml
+```
+
+Railway config (`railway.json`):
+- **Builder**: Dockerfile (`ml/Dockerfile`)
+- **Health check**: `/health` (120s timeout)
+- **Restart policy**: On failure (max 3 retries)
+- **Server**: Gunicorn with 2 workers, 120s request timeout
 
 ---
 
 ## 🔑 Key Differentiators
 
 | Feature | InSilico Formulator | Traditional Tools |
-|---------|--------------------|--------------------|
+|---------|--------------------|--------------------| 
 | **Setup time** | 2 minutes | Days to weeks |
 | **Cost** | Free & open source | $10K–$100K/yr licenses |
 | **AI Assistant** | Context-aware copilot with function calling + voice | None |
 | **ML Engine** | QSPR v2.0 ensemble (RF + XGB, ECFP4) | Single model |
+| **3D Visualization** | Three.js engine + 3Dmol.js (reactions, conformers, vibration) | Static images |
 | **Voice interaction** | PersonaPlex (Cerebras + Edge TTS + Riva) | N/A |
 | **Dataset lookup** | Query 8,862 measured values mid-conversation | Manual search |
 | **Reports** | One-click PDF/CSV export | Manual export |
-| **UI/UX** | Modern glassmorphism, Framer Motion | Legacy interfaces |
-| **Deployment** | Vercel + Supabase (free tier) | On-premises only |
+| **UI/UX** | Modern glassmorphism, Framer Motion, Three.js | Legacy interfaces |
+| **Deployment** | Vercel + Railway + Supabase (free tier) | On-premises only |
 
 ---
 
@@ -569,7 +720,7 @@ inSillico/
 |--------|-------------|
 | `npm run dev:all` | Start Next.js + Python ML server together (recommended for dev) |
 | `npm run dev` | Next.js dev server only → http://localhost:3000 |
-| `npm run ml` | Python ML + Voice server only → http://localhost:5001 |
+| `npm run ml` | Python ML + Voice + 3D server only → http://localhost:5001 |
 | `npm run ml:legacy` | Legacy v1 server (deprecated) |
 | `npm run ml:train` | Train QSPR v2.0 models (default hyperparameters) |
 | `npm run ml:train:tune` | Train with Optuna Bayesian hyperparameter tuning |
@@ -597,4 +748,3 @@ inSillico/
 <p align="center">
   Built with 🧬 for the future of drug discovery
 </p>
-
