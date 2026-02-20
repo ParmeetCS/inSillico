@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -29,6 +29,9 @@ import {
     Play,
     ArrowLeft,
     RefreshCw,
+    Database,
+    Shield,
+    Microscope,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
@@ -109,6 +112,54 @@ interface FullAnalysisResult {
     summary: string;
 }
 
+/* ═══════════════ Pipeline Steps Config ═══════════════ */
+
+interface PipelineStepConfig {
+    key: string;
+    label: string;
+    icon: typeof Target;
+    color: string;
+    bg: string;
+    description: string;
+    resultLabel: (r: PipelineStepResults) => string;
+}
+
+interface PipelineStepResults {
+    targets?: FullAnalysisResult["targets"];
+    ppi_network?: FullAnalysisResult["ppi_network"];
+    pathways?: FullAnalysisResult["pathways"];
+    diseases?: FullAnalysisResult["diseases"];
+}
+
+type StepStatus = "waiting" | "running" | "complete" | "error";
+
+const PIPELINE_STEPS: PipelineStepConfig[] = [
+    {
+        key: "targets", label: "Target Prediction", icon: Target,
+        color: "var(--accent-blue)", bg: "rgba(59,130,246,0.12)",
+        description: "Querying ChEMBL API, running Morgan fingerprint similarity & SMARTS pharmacophore matching…",
+        resultLabel: (r) => r.targets ? `${r.targets.target_count} targets identified` : "",
+    },
+    {
+        key: "ppi", label: "PPI Network Construction", icon: GitBranch,
+        color: "var(--accent-purple)", bg: "rgba(139,92,246,0.12)",
+        description: "Building protein-protein interaction network from STRING DB…",
+        resultLabel: (r) => r.ppi_network ? `${r.ppi_network.nodes.length} nodes, ${r.ppi_network.edges.length} edges` : "",
+    },
+    {
+        key: "pathways", label: "Pathway Enrichment", icon: Map,
+        color: "var(--accent-green)", bg: "rgba(16,185,129,0.12)",
+        description: "Enriching pathways via Reactome & KEGG databases…",
+        resultLabel: (r) => r.pathways ? `${r.pathways.pathway_count} enriched pathways` : "",
+    },
+    {
+        key: "diseases", label: "Disease Mapping", icon: Activity,
+        color: "var(--accent-red)", bg: "rgba(239,68,68,0.12)",
+        description: "Mapping disease associations from Open Targets platform…",
+        resultLabel: (r) => r.diseases ? `${r.diseases.disease_count} disease associations` : "",
+    },
+];
+
 /* ═══════════════ Tab config ═══════════════ */
 
 type Tab = "targets" | "network" | "pathways" | "diseases" | "topology";
@@ -185,6 +236,15 @@ function NetworkPharmacologyInner() {
     const [customSmiles, setCustomSmiles] = useState("");
     const [showCustomInput, setShowCustomInput] = useState(false);
 
+    // Pipeline stepper state
+    const [pipelineStep, setPipelineStep] = useState(-1); // -1 = not started, 0-3 = current step
+    const [stepStatuses, setStepStatuses] = useState<StepStatus[]>(["waiting", "waiting", "waiting", "waiting"]);
+    const [stepResults, setStepResults] = useState<PipelineStepResults>({});
+    const [stepTimings, setStepTimings] = useState<(number | null)[]>([null, null, null, null]);
+    const [totalElapsed, setTotalElapsed] = useState(0);
+    const analysisStartRef = useRef<number>(0);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
     /* ── Fetch user data ── */
     const fetchUserData = useCallback(async () => {
         if (!user) return;
@@ -212,6 +272,11 @@ function NetworkPharmacologyInner() {
 
     useEffect(() => { if (user) fetchUserData(); }, [user, fetchUserData]);
 
+    // Clean up timer on unmount
+    useEffect(() => {
+        return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    }, []);
+
     /* ── URL redirect handling ── */
     useEffect(() => {
         const smi = searchParams.get("smiles");
@@ -220,27 +285,115 @@ function NetworkPharmacologyInner() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
-    /* ── Run analysis ── */
+    /* ── Run analysis (step-by-step pipeline) ── */
+    const resetPipeline = useCallback(() => {
+        setPipelineStep(-1);
+        setStepStatuses(["waiting", "waiting", "waiting", "waiting"]);
+        setStepResults({});
+        setStepTimings([null, null, null, null]);
+        setTotalElapsed(0);
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    }, []);
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const runAnalysis = useCallback(async (smilesInput?: string) => {
         const smi = smilesInput || selectedSmiles;
         if (!smi.trim()) return;
+
+        // Reset everything
         setAnalyzing(true); setError(null); setResult(null); setSelectedSmiles(smi);
-        try {
+        resetPipeline();
+
+        // Start elapsed timer
+        analysisStartRef.current = Date.now();
+        timerRef.current = setInterval(() => {
+            setTotalElapsed(Math.floor((Date.now() - analysisStartRef.current) / 1000));
+        }, 500);
+
+        const postAPI = async (body: Record<string, unknown>) => {
             const resp = await fetch("/api/network-pharmacology", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ smiles: smi, action: "full" }),
+                body: JSON.stringify(body),
             });
             if (!resp.ok) {
                 const errData = await resp.json().catch(() => ({ error: "Request failed" }));
                 throw new Error(errData.error || `HTTP ${resp.status}`);
             }
-            const data: FullAnalysisResult = await resp.json();
-            setResult(data); setActiveTab("targets"); haptic("success");
+            return resp.json();
+        };
+
+        const updateStatus = (idx: number, status: StepStatus) =>
+            setStepStatuses(prev => { const copy = [...prev]; copy[idx] = status; return copy; });
+        const updateTiming = (idx: number, ms: number) =>
+            setStepTimings(prev => { const copy = [...prev]; copy[idx] = ms; return copy; });
+
+        try {
+            // ── Step 0: Target Prediction ──
+            setPipelineStep(0);
+            updateStatus(0, "running");
+            const t0 = Date.now();
+            const targetsData = await postAPI({ smiles: smi, action: "targets" });
+            updateTiming(0, Date.now() - t0);
+            updateStatus(0, "complete");
+            setStepResults(prev => ({ ...prev, targets: targetsData }));
+
+            const genes = targetsData.gene_list || targetsData.targets?.map((t: TargetResult) => t.gene_name) || [];
+
+            // ── Step 1: PPI Network ──
+            setPipelineStep(1);
+            updateStatus(1, "running");
+            const t1 = Date.now();
+            const ppiData = await postAPI({ genes, action: "ppi" });
+            updateTiming(1, Date.now() - t1);
+            updateStatus(1, "complete");
+            setStepResults(prev => ({ ...prev, ppi_network: ppiData }));
+
+            // ── Step 2: Pathway Enrichment ──
+            setPipelineStep(2);
+            updateStatus(2, "running");
+            const t2 = Date.now();
+            const pathwayData = await postAPI({ genes, action: "pathways" });
+            updateTiming(2, Date.now() - t2);
+            updateStatus(2, "complete");
+            setStepResults(prev => ({ ...prev, pathways: pathwayData }));
+
+            // ── Step 3: Disease Mapping ──
+            setPipelineStep(3);
+            updateStatus(3, "running");
+            const t3 = Date.now();
+            const diseaseData = await postAPI({ genes, action: "diseases" });
+            updateTiming(3, Date.now() - t3);
+            updateStatus(3, "complete");
+            setStepResults(prev => ({ ...prev, diseases: diseaseData }));
+
+            // Assemble full result
+            const fullResult: FullAnalysisResult = {
+                smiles: smi,
+                targets: targetsData,
+                ppi_network: ppiData,
+                pathways: pathwayData,
+                diseases: diseaseData,
+                summary: `Identified ${targetsData.target_count} targets, ${ppiData.nodes?.length || 0} PPI nodes, ${pathwayData.pathway_count} pathways, and ${diseaseData.disease_count} disease associations.`,
+            };
+
+            // Brief delay to show completed state before transitioning
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            setResult(fullResult); setActiveTab("targets"); haptic("success");
         } catch (e: unknown) {
+            // Mark current step as error
+            setStepStatuses(prev => {
+                const copy = [...prev];
+                const runningIdx = copy.findIndex(s => s === "running");
+                if (runningIdx >= 0) copy[runningIdx] = "error";
+                return copy;
+            });
             setError(e instanceof Error ? e.message : "Analysis failed");
-        } finally { setAnalyzing(false); }
-    }, [selectedSmiles]);
+        } finally {
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+            setAnalyzing(false);
+        }
+    }, [selectedSmiles, resetPipeline]);
 
     const handleMoleculeSelect = useCallback((smiles: string, name: string) => {
         setSelectedSmiles(smiles); setSelectedName(name); setResult(null); setError(null);
@@ -477,27 +630,235 @@ function NetworkPharmacologyInner() {
             )}
 
             {/* ═══════════════════════════════════
-               ANALYZING spinner
+               ANIMATED PIPELINE STEPPER
                ═══════════════════════════════════ */}
             <AnimatePresence>
                 {analyzing && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", paddingTop: 80, paddingBottom: 80 }}
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.4 }}
+                        style={{ paddingTop: 32, paddingBottom: 40 }}
                     >
-                        <div style={{ position: "relative", marginBottom: 24 }}>
-                            <Loader2 size={52} style={{ color: "var(--accent-blue)" }} className="spin" />
-                            <Zap size={22} style={{ color: "var(--accent-orange)", position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }} />
+                        {/* Header */}
+                        <div style={{ textAlign: "center", marginBottom: 32 }}>
+                            <motion.div
+                                initial={{ scale: 0 }} animate={{ scale: 1 }}
+                                transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.15))", border: "1px solid rgba(59,130,246,0.2)", marginBottom: 16, position: "relative" }}
+                            >
+                                <Microscope size={28} style={{ color: "var(--accent-blue)" }} />
+                                <motion.div
+                                    animate={{ opacity: [0.3, 1, 0.3] }}
+                                    transition={{ duration: 2, repeat: Infinity }}
+                                    style={{ position: "absolute", inset: -3, borderRadius: 18, border: "2px solid rgba(59,130,246,0.3)" }}
+                                />
+                            </motion.div>
+                            <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>
+                                Network Pharmacology Pipeline
+                            </h3>
+                            <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: 4 }}>
+                                Analyzing <span style={{ fontWeight: 600, color: "var(--accent-blue)" }}>{selectedName || "compound"}</span>
+                            </p>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", background: "rgba(15,23,42,0.5)", borderRadius: 20, fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                <Clock size={11} />
+                                <span style={{ fontFamily: "monospace" }}>{totalElapsed}s elapsed</span>
+                            </div>
                         </div>
-                        <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>
-                            Analyzing {selectedName || "compound"}…
-                        </h3>
-                        <p style={{ color: "var(--text-secondary)", fontSize: "0.88rem", marginBottom: 16 }}>Running full network pharmacology pipeline</p>
-                        <div style={{ display: "flex", gap: 20, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Target size={12} /> Targets</span>
-                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><GitBranch size={12} /> PPI</span>
-                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Map size={12} /> Pathways</span>
-                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Activity size={12} /> Diseases</span>
+
+                        {/* Overall progress bar */}
+                        <div style={{ maxWidth: 520, margin: "0 auto 28px", padding: "0 16px" }}>
+                            <div style={{ height: 4, background: "var(--navy-700)", borderRadius: 2, overflow: "hidden" }}>
+                                <motion.div
+                                    animate={{ width: `${((stepStatuses.filter(s => s === "complete").length) / 4) * 100}%` }}
+                                    transition={{ duration: 0.5, ease: "easeOut" }}
+                                    style={{ height: "100%", background: "linear-gradient(90deg, var(--accent-blue), var(--accent-purple), var(--accent-green))", borderRadius: 2 }}
+                                />
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                                <span>Step {Math.min(pipelineStep + 1, 4)} of 4</span>
+                                <span>{stepStatuses.filter(s => s === "complete").length}/4 complete</span>
+                            </div>
                         </div>
+
+                        {/* Step cards */}
+                        <div style={{ maxWidth: 520, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12, padding: "0 16px" }}>
+                            {PIPELINE_STEPS.map((step, idx) => {
+                                const status = stepStatuses[idx];
+                                const StepIcon = step.icon;
+                                const isActive = status === "running";
+                                const isComplete = status === "complete";
+                                const isError = status === "error";
+                                const timing = stepTimings[idx];
+                                const resultText = step.resultLabel(stepResults);
+
+                                return (
+                                    <motion.div
+                                        key={step.key}
+                                        initial={{ opacity: 0, x: -20 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: idx * 0.08, duration: 0.3 }}
+                                    >
+                                        <div
+                                            className="glass-subtle"
+                                            style={{
+                                                padding: isActive ? "16px 18px" : "12px 18px",
+                                                borderColor: isActive ? step.color : isComplete ? "rgba(16,185,129,0.25)" : isError ? "rgba(239,68,68,0.3)" : "transparent",
+                                                transition: "all 0.3s ease",
+                                                position: "relative",
+                                                overflow: "hidden",
+                                            }}
+                                        >
+                                            {/* Active glow */}
+                                            {isActive && (
+                                                <motion.div
+                                                    animate={{ opacity: [0.05, 0.12, 0.05] }}
+                                                    transition={{ duration: 2, repeat: Infinity }}
+                                                    style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${step.bg}, transparent)`, pointerEvents: "none" }}
+                                                />
+                                            )}
+
+                                            <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+                                                {/* Status icon */}
+                                                <div style={{
+                                                    width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+                                                    background: isActive ? step.bg : isComplete ? "rgba(16,185,129,0.12)" : isError ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.06)",
+                                                    border: `1px solid ${isActive ? step.color : isComplete ? "rgba(16,185,129,0.25)" : isError ? "rgba(239,68,68,0.25)" : "rgba(148,163,184,0.1)"}`,
+                                                    transition: "all 0.3s ease",
+                                                    flexShrink: 0,
+                                                }}>
+                                                    {isActive ? (
+                                                        <Loader2 size={18} style={{ color: step.color }} className="spin" />
+                                                    ) : isComplete ? (
+                                                        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }}>
+                                                            <CheckCircle2 size={18} style={{ color: "var(--accent-green)" }} />
+                                                        </motion.div>
+                                                    ) : isError ? (
+                                                        <AlertCircle size={18} style={{ color: "var(--accent-red)" }} />
+                                                    ) : (
+                                                        <StepIcon size={16} style={{ color: "var(--text-muted)", opacity: 0.4 }} />
+                                                    )}
+                                                </div>
+
+                                                {/* Content */}
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                                        <p style={{
+                                                            fontSize: "0.88rem", fontWeight: 600,
+                                                            color: isActive ? "var(--text-primary)" : isComplete ? "var(--text-primary)" : isError ? "var(--accent-red)" : "var(--text-muted)",
+                                                            transition: "color 0.3s ease",
+                                                        }}>
+                                                            {step.label}
+                                                        </p>
+                                                        {timing != null && (
+                                                            <motion.span
+                                                                initial={{ opacity: 0 }}
+                                                                animate={{ opacity: 1 }}
+                                                                style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace", flexShrink: 0 }}
+                                                            >
+                                                                {(timing / 1000).toFixed(1)}s
+                                                            </motion.span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Active: show description */}
+                                                    <AnimatePresence mode="wait">
+                                                        {isActive && (
+                                                            <motion.p
+                                                                initial={{ opacity: 0, height: 0 }}
+                                                                animate={{ opacity: 1, height: "auto" }}
+                                                                exit={{ opacity: 0, height: 0 }}
+                                                                style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 2 }}
+                                                            >
+                                                                {step.description}
+                                                            </motion.p>
+                                                        )}
+                                                    </AnimatePresence>
+
+                                                    {/* Complete: show result summary */}
+                                                    <AnimatePresence mode="wait">
+                                                        {isComplete && resultText && (
+                                                            <motion.div
+                                                                initial={{ opacity: 0, y: -4 }}
+                                                                animate={{ opacity: 1, y: 0 }}
+                                                                style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}
+                                                            >
+                                                                <Database size={10} style={{ color: "var(--accent-green)", flexShrink: 0 }} />
+                                                                <span style={{ fontSize: "0.75rem", color: "var(--accent-green)", fontWeight: 500 }}>
+                                                                    {resultText}
+                                                                </span>
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
+
+                                                    {/* Error state */}
+                                                    {isError && (
+                                                        <p style={{ fontSize: "0.75rem", color: "var(--accent-red)", marginTop: 2, opacity: 0.8 }}>
+                                                            Step failed — see error below
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Active step: animated progress bar */}
+                                            {isActive && (
+                                                <motion.div
+                                                    style={{ marginTop: 12, height: 3, background: "var(--navy-700)", borderRadius: 2, overflow: "hidden" }}
+                                                >
+                                                    <motion.div
+                                                        animate={{ x: ["-100%", "100%"] }}
+                                                        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                                                        style={{ height: "100%", width: "40%", background: `linear-gradient(90deg, transparent, ${step.color}, transparent)`, borderRadius: 2 }}
+                                                    />
+                                                </motion.div>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Tier breakdown after targets complete */}
+                        <AnimatePresence>
+                            {stepResults.targets && stepResults.targets.targets && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.3, duration: 0.4 }}
+                                    style={{ maxWidth: 520, margin: "16px auto 0", padding: "0 16px" }}
+                                >
+                                    <div className="glass-subtle" style={{ padding: "12px 16px" }}>
+                                        <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                                            <Shield size={12} style={{ color: "var(--accent-blue)" }} /> Prediction Tier Breakdown
+                                        </p>
+                                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                                            {(() => {
+                                                const tiers: Record<string, number> = {};
+                                                stepResults.targets.targets.forEach((t: TargetResult) => {
+                                                    const tierName = t.source || "unknown";
+                                                    tiers[tierName] = (tiers[tierName] || 0) + 1;
+                                                });
+                                                const tierColors: Record<string, string> = {
+                                                    chembl: "var(--accent-blue)", chembl_api: "var(--accent-blue)",
+                                                    similarity: "var(--accent-purple)", pharmacophore: "var(--accent-orange)",
+                                                    mock: "var(--text-muted)",
+                                                };
+                                                return Object.entries(tiers).map(([tier, count]) => (
+                                                    <motion.div
+                                                        key={tier}
+                                                        initial={{ scale: 0 }} animate={{ scale: 1 }}
+                                                        transition={{ type: "spring", stiffness: 250, damping: 15 }}
+                                                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "rgba(15,23,42,0.5)", borderRadius: 8 }}
+                                                    >
+                                                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: tierColors[tier] || "var(--text-muted)" }} />
+                                                        <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)", textTransform: "capitalize" }}>{tier.replace(/_/g, " ")}</span>
+                                                        <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-primary)", fontFamily: "monospace" }}>{count}</span>
+                                                    </motion.div>
+                                                ));
+                                            })()}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </motion.div>
                 )}
             </AnimatePresence>
