@@ -1,5 +1,5 @@
 /**
- * AI Drug Discovery Copilot — Cerebras AI + RAG + Function Calling
+ * AI — Cerebras AI + RAG + Function Calling
  * ==================================================================
  * 
  * POST /api/copilot

@@ -173,7 +173,9 @@ class RandomForestQSPR(QSPRModel):
 
     def _build_model(self):
         if self.task == "regression":
-            return RandomForestRegressor(**self.params)
+            # Remove class_weight for regression (not applicable)
+            params = {k: v for k, v in self.params.items() if k != "class_weight"}
+            return RandomForestRegressor(**params)
         else:
             return RandomForestClassifier(**self.params)
 

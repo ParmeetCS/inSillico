@@ -35,6 +35,7 @@ import type {
     RecordingState,
 } from "@/components/molecular/types";
 import type { MolecularSceneHandle } from "@/components/molecular/MolecularScene";
+import { smilesToMoleculeData, smilesToReactionData } from "@/lib/smiles-to-3d";
 
 // Dynamic import – Three.js must only load client-side
 const MolecularScene = dynamic(
@@ -61,44 +62,44 @@ const PRESET_REACTIONS: {
     product: string;
     bondChanges: { type: "form" | "break"; atom1: number; atom2: number }[];
 }[] = [
-    {
-        name: "Dehydration",
-        equation: "C₂H₅OH → C₂H₄ + H₂O",
-        reactant: "CCO",
-        product: "C=C",
-        bondChanges: [
-            { type: "break", atom1: 2, atom2: 3 },
-            { type: "form", atom1: 1, atom2: 2 },
-        ],
-    },
-    {
-        name: "Oxidation",
-        equation: "CH₃OH → CH₂O",
-        reactant: "CO",
-        product: "C=O",
-        bondChanges: [
-            { type: "form", atom1: 1, atom2: 2 },
-        ],
-    },
-    {
-        name: "Hydrogenation",
-        equation: "C₂H₄ + H₂ → C₂H₆",
-        reactant: "C=C",
-        product: "CC",
-        bondChanges: [
-            { type: "break", atom1: 1, atom2: 2 },
-        ],
-    },
-    {
-        name: "Esterification",
-        equation: "CH₃COOH + CH₃OH → CH₃COOCH₃",
-        reactant: "CC(=O)O",
-        product: "CC(=O)OC",
-        bondChanges: [
-            { type: "form", atom1: 4, atom2: 5 },
-        ],
-    },
-];
+        {
+            name: "Dehydration",
+            equation: "C₂H₅OH → C₂H₄ + H₂O",
+            reactant: "CCO",
+            product: "C=C",
+            bondChanges: [
+                { type: "break", atom1: 2, atom2: 3 },
+                { type: "form", atom1: 1, atom2: 2 },
+            ],
+        },
+        {
+            name: "Oxidation",
+            equation: "CH₃OH → CH₂O",
+            reactant: "CO",
+            product: "C=O",
+            bondChanges: [
+                { type: "form", atom1: 1, atom2: 2 },
+            ],
+        },
+        {
+            name: "Hydrogenation",
+            equation: "C₂H₄ + H₂ → C₂H₆",
+            reactant: "C=C",
+            product: "CC",
+            bondChanges: [
+                { type: "break", atom1: 1, atom2: 2 },
+            ],
+        },
+        {
+            name: "Esterification",
+            equation: "CH₃COOH + CH₃OH → CH₃COOCH₃",
+            reactant: "CC(=O)O",
+            product: "CC(=O)OC",
+            bondChanges: [
+                { type: "form", atom1: 4, atom2: 5 },
+            ],
+        },
+    ];
 
 export default function ReactionLabPage() {
     // ─── State ────────────────────────────────────────────────────────────
@@ -136,26 +137,31 @@ export default function ReactionLabPage() {
     const sceneRef = useRef<MolecularSceneHandle>(null);
     const lastBlobRef = useRef<Blob | null>(null);
 
-    // ─── Fetch 3D from backend ──────────────────────────────────────────
+    // ─── Generate 3D: try backend first, fall back to client-side ──────
     const generate3D = useCallback(async (smiles: string) => {
         setLoading(true);
         setError(null);
         setReactionData(null);
         setViewMode("molecule");
         try {
+            // Try ML backend first
             const res = await fetch(`${ML_API}/generate-3d`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ smiles, num_conformers: 5 }),
+                signal: AbortSignal.timeout(3000),
             });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: res.statusText }));
-                throw new Error(err.error || "Failed to generate 3D");
-            }
+            if (!res.ok) throw new Error("Backend unavailable");
             const data = await res.json();
             setMoleculeData(data as MoleculeData);
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : "Unknown error");
+        } catch {
+            // Fallback: generate 3D client-side
+            try {
+                const data = smilesToMoleculeData(smiles);
+                setMoleculeData(data);
+            } catch (e2: unknown) {
+                setError(e2 instanceof Error ? e2.message : "Failed to parse SMILES");
+            }
         } finally {
             setLoading(false);
         }
@@ -175,16 +181,21 @@ export default function ReactionLabPage() {
                     product_smiles: productSmiles,
                     bond_changes: [],
                 }),
+                signal: AbortSignal.timeout(3000),
             });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: res.statusText }));
-                throw new Error(err.error || "Failed to generate reaction");
-            }
+            if (!res.ok) throw new Error("Backend unavailable");
             const data = await res.json();
             setReactionData(data as ReactionData);
             setIsPlaying(true);
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : "Unknown error");
+        } catch {
+            // Fallback: generate reaction client-side
+            try {
+                const data = smilesToReactionData(reactantSmiles, productSmiles);
+                setReactionData(data);
+                setIsPlaying(true);
+            } catch (e2: unknown) {
+                setError(e2 instanceof Error ? e2.message : "Failed to parse reaction SMILES");
+            }
         } finally {
             setLoading(false);
         }
@@ -290,13 +301,23 @@ export default function ReactionLabPage() {
                                         product_smiles: rx.product,
                                         bond_changes: rx.bondChanges,
                                     }),
+                                    signal: AbortSignal.timeout(3000),
                                 })
-                                    .then((r) => r.json())
+                                    .then((r) => { if (!r.ok) throw new Error("Backend unavailable"); return r.json(); })
                                     .then((data) => {
                                         setReactionData(data);
                                         setIsPlaying(true);
                                     })
-                                    .catch((e) => setError(e.message))
+                                    .catch(() => {
+                                        // Fallback: client-side 3D generation
+                                        try {
+                                            const data = smilesToReactionData(rx.reactant, rx.product, rx.bondChanges);
+                                            setReactionData(data);
+                                            setIsPlaying(true);
+                                        } catch (e2: unknown) {
+                                            setError(e2 instanceof Error ? e2.message : "Failed to parse reaction");
+                                        }
+                                    })
                                     .finally(() => setLoading(false));
                             }}
                             className="badge badge-completed"
