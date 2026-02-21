@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Pill,
@@ -440,9 +440,8 @@ export default function DrugIntelligencePage() {
                                 const Icon = stage.icon;
 
                                 return (
-                                    <>
+                                    <React.Fragment key={stage.id}>
                                         <motion.div
-                                            key={stage.id}
                                             animate={{
                                                 scale: isActive ? 1.05 : 1,
                                                 opacity: isCompleted || isActive ? 1 : 0.5,
@@ -526,7 +525,7 @@ export default function DrugIntelligencePage() {
                                                 }}
                                             />
                                         )}
-                                    </>
+                                    </React.Fragment>
                                 );
                             })}
                         </div>
