@@ -36,6 +36,21 @@ interface DiseaseResult {
     associated_genes: string[];
     gene_count: number;
     source: string;
+    composite_score?: number;
+    network_support_level?: string;
+    applicability_domain?: string;
+    supporting_targets_high?: string[];
+    supporting_pathways?: string[];
+}
+
+interface DiseaseInferenceData {
+    diseases: DiseaseResult[];
+    disease_count: number;
+    suppressed_count: number;
+    therapeutic_areas: Record<string, number>;
+    network_coherence: { is_coherent: boolean; coherence_score: number; flags: string[] };
+    target_summary: { high_confidence: number; medium_confidence: number; low_confidence: number };
+    ai_suggestion: { has_suggestion: boolean; message: string; confidence: string };
 }
 
 export interface NetworkPharmacologyReportData {
@@ -46,6 +61,7 @@ export interface NetworkPharmacologyReportData {
     ppi_network: { nodes: PPINode[]; edges: PPIEdge[]; metrics: Record<string, unknown>; source: string };
     pathways: { pathways: PathwayResult[]; pathway_count: number; top_pathways: string[] };
     diseases: { diseases: DiseaseResult[]; disease_count: number; therapeutic_areas: Record<string, number> };
+    disease_inference?: DiseaseInferenceData;
     summary: string;
     aiSuggestion?: string | null;
 }
@@ -222,7 +238,7 @@ export function generateNetworkPharmacologyPDF(data: NetworkPharmacologyReportDa
         { label: "Targets", value: String(data.targets.target_count), color: C.blue },
         { label: "PPI Nodes", value: String(data.ppi_network.nodes.length), color: C.purple },
         { label: "Pathways", value: String(data.pathways.pathway_count), color: C.green },
-        { label: "Diseases", value: String(data.diseases.disease_count), color: C.red },
+        { label: "Diseases", value: String(data.disease_inference?.disease_count ?? data.diseases.disease_count), color: C.red },
     ];
     const boxW = (cw - 24) / 4;
     stats.forEach((s, i) => {
@@ -500,9 +516,75 @@ export function generateNetworkPharmacologyPDF(data: NetworkPharmacologyReportDa
     /* ════════════════════════════════════
        SECTION 4: Disease Associations
        ════════════════════════════════════ */
+    const hasInference = !!data.disease_inference;
+    const inferenceLabel = hasInference
+        ? `Disease Inference v2.0 (${data.disease_inference!.disease_count} validated, ${data.disease_inference!.suppressed_count} suppressed)`
+        : `Disease Associations (${data.diseases.disease_count})`;
+
     y = ensureSpace(doc, y, 40, pageW, pageH);
-    drawSectionHeader(doc, mx, y, `Disease Associations (${data.diseases.disease_count})`, C.red);
+    drawSectionHeader(doc, mx, y, inferenceLabel, C.red);
     y += 14;
+
+    /* ── Inference summary box (v2.0 only) ── */
+    if (hasInference) {
+        const inf = data.disease_inference!;
+        const summaryH = 30 + (inf.ai_suggestion ? 10 : 0) + ((inf.network_coherence?.flags?.length ?? 0) > 0 ? 8 : 0);
+        y = ensureSpace(doc, y, summaryH + 4, pageW, pageH);
+
+        roundedRect(doc, mx, y, cw, summaryH, 3, C.navy800, 0.7);
+        doc.setFillColor(...C.cyan);
+        doc.rect(mx, y, 1.5, summaryH, "F");
+
+        let sy = y + 7;
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...C.white);
+        doc.text("Inference Summary", mx + 6, sy);
+        sy += 6;
+
+        // Stats row
+        const infStats = [
+            `High-Conf Targets: ${inf.target_summary?.high_confidence ?? "?"}`,
+            `Network Coherence: ${inf.network_coherence?.coherence_score != null ? (inf.network_coherence.coherence_score * 100).toFixed(0) + "%" : "N/A"}`,
+            `Validated Diseases: ${inf.disease_count}`,
+            `Suppressed: ${inf.suppressed_count}`,
+        ];
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...C.textSec);
+        doc.text(infStats.join("   |   "), mx + 6, sy);
+        sy += 6;
+
+        // Drug validation
+        if (inf.drug_validation) {
+            doc.setFontSize(6.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(...C.green);
+            doc.text(`Drug Match: ${inf.drug_validation.matched_drug || "None"}`, mx + 6, sy);
+            sy += 6;
+        }
+
+        // Network flags
+        if (inf.network_coherence?.flags && inf.network_coherence.flags.length > 0) {
+            doc.setFontSize(6);
+            doc.setFont("helvetica", "italic");
+            doc.setTextColor(239, 68, 68);
+            doc.text("Flags: " + inf.network_coherence.flags.join(", "), mx + 6, sy);
+            sy += 6;
+        }
+
+        // AI suggestion
+        if (inf.ai_suggestion) {
+            doc.setFontSize(6.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(...C.cyan);
+            const aiMsg = inf.ai_suggestion.length > 120 ? inf.ai_suggestion.slice(0, 117) + "..." : inf.ai_suggestion;
+            doc.text(`AI: ${aiMsg}`, mx + 6, sy);
+            sy += 6;
+        }
+
+        y = sy + 4;
+    }
 
     // Therapeutic area tags
     const areaEntries = Object.entries(data.diseases.therapeutic_areas || {});
@@ -534,21 +616,66 @@ export function generateNetworkPharmacologyPDF(data: NetworkPharmacologyReportDa
         y = py + 10;
     }
 
-    if (data.diseases.diseases.length > 0) {
-        const topDiseases = data.diseases.diseases.slice(0, 20);
+    /* ── Disease table ── */
+    const diseasesForTable = hasInference
+        ? (data.disease_inference!.diseases ?? data.diseases.diseases)
+        : data.diseases.diseases;
+
+    if (diseasesForTable.length > 0) {
+        const topDiseases = diseasesForTable.slice(0, 20);
         const tblStartPage = doc.getCurrentPageInfo().pageNumber;
+
+        const useInferenceCols = hasInference && topDiseases.some((d: any) => d.composite_score != null);
+
+        const head = useInferenceCols
+            ? [["#", "Disease", "Area", "Composite", "Network", "Domain", "Key Targets"]]
+            : [["#", "Disease", "Therapeutic Area", "Score", "Associated Genes"]];
+
+        const body = topDiseases.map((d: any, i: number) => {
+            if (useInferenceCols) {
+                return [
+                    String(i + 1),
+                    d.disease_name.length > 24 ? d.disease_name.slice(0, 22) + "..." : d.disease_name,
+                    d.therapeutic_area || "",
+                    (d.composite_score ?? d.score ?? 0).toFixed(3),
+                    d.network_support_level || "—",
+                    d.applicability_domain || "—",
+                    (d.supporting_targets_high || d.associated_genes || []).slice(0, 3).join(", ") +
+                        ((d.supporting_targets_high || d.associated_genes || []).length > 3 ? "..." : ""),
+                ];
+            }
+            return [
+                String(i + 1),
+                d.disease_name.length > 28 ? d.disease_name.slice(0, 26) + "..." : d.disease_name,
+                d.therapeutic_area,
+                (d.score ?? 0).toFixed(3),
+                (d.associated_genes || []).slice(0, 4).join(", ") + ((d.associated_genes || []).length > 4 ? "..." : ""),
+            ];
+        });
+
+        const colStyles: Record<number, any> = useInferenceCols
+            ? {
+                0: { cellWidth: 7, halign: "center" },
+                1: { cellWidth: "auto", fontStyle: "bold" },
+                2: { cellWidth: 22, fontSize: 5.5 },
+                3: { cellWidth: 16, halign: "center", textColor: [239, 68, 68] },
+                4: { cellWidth: 18, halign: "center", textColor: [96, 165, 250], fontSize: 5.5 },
+                5: { cellWidth: 18, halign: "center", fontSize: 5.5 },
+                6: { cellWidth: 32, textColor: [96, 165, 250], fontSize: 5.5 },
+            }
+            : {
+                0: { cellWidth: 7, halign: "center" },
+                1: { cellWidth: "auto", fontStyle: "bold" },
+                2: { cellWidth: 30 },
+                3: { cellWidth: 16, halign: "center", textColor: [239, 68, 68] },
+                4: { cellWidth: 40, textColor: [96, 165, 250], fontSize: 5.5 },
+            };
 
         autoTable(doc, {
             startY: y,
             margin: { left: mx + 2, right: mx + 2 },
-            head: [["#", "Disease", "Therapeutic Area", "Score", "Associated Genes"]],
-            body: topDiseases.map((d, i) => [
-                String(i + 1),
-                d.disease_name.length > 28 ? d.disease_name.slice(0, 26) + "..." : d.disease_name,
-                d.therapeutic_area,
-                d.score.toFixed(3),
-                (d.associated_genes || []).slice(0, 4).join(", ") + ((d.associated_genes || []).length > 4 ? "..." : ""),
-            ]),
+            head,
+            body,
             styles: {
                 fillColor: [15, 23, 42],
                 textColor: [241, 245, 249],
@@ -563,13 +690,7 @@ export function generateNetworkPharmacologyPDF(data: NetworkPharmacologyReportDa
                 fontSize: 6,
                 fontStyle: "bold",
             },
-            columnStyles: {
-                0: { cellWidth: 7, halign: "center" },
-                1: { cellWidth: "auto", fontStyle: "bold" },
-                2: { cellWidth: 30 },
-                3: { cellWidth: 16, halign: "center", textColor: [239, 68, 68] },
-                4: { cellWidth: 40, textColor: [96, 165, 250], fontSize: 5.5 },
-            },
+            columnStyles: colStyles,
             didDrawPage() {
                 const pg = doc.getCurrentPageInfo().pageNumber;
                 if (pg > tblStartPage) {
@@ -581,6 +702,20 @@ export function generateNetworkPharmacologyPDF(data: NetworkPharmacologyReportDa
         });
 
         y = (doc as any).lastAutoTable.finalY + 6;
+
+        /* ── Suppressed diseases note ── */
+        if (hasInference && (data.disease_inference!.suppressed_count ?? 0) > 0) {
+            y = ensureSpace(doc, y, 12, pageW, pageH);
+            roundedRect(doc, mx, y, cw, 10, 2, [30, 20, 20] as any, 0.5);
+            doc.setFontSize(6);
+            doc.setFont("helvetica", "italic");
+            doc.setTextColor(239, 68, 68);
+            doc.text(
+                `${data.disease_inference!.suppressed_count} disease(s) suppressed by inference filters (insufficient pathway/network support or single-target propagation).`,
+                mx + 4, y + 6
+            );
+            y += 14;
+        }
     }
 
     /* ════════════════════════════════════

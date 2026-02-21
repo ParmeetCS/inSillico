@@ -330,6 +330,24 @@ def _compute_graph_metrics(nodes: List[str], edges: List[Dict[str, Any]]
     # Hub genes (top 5 by degree)
     hub_genes = list(degree_cent.keys())[:5]
 
+    # Clustering coefficient (global transitivity)
+    triangles = 0
+    triples = 0
+    for nd in node_set:
+        nbrs = list(adj[nd])
+        k = len(nbrs)
+        if k < 2:
+            continue
+        triples += k * (k - 1) // 2
+        for i in range(k):
+            for j in range(i + 1, k):
+                if nbrs[j] in adj[nbrs[i]]:
+                    triangles += 1
+    clustering_coefficient = round(triangles / triples, 4) if triples > 0 else 0.0
+
+    # Average degree
+    avg_degree = round((2 * num_edges) / n, 2) if n > 0 else 0.0
+
     return {
         "hub_genes": hub_genes,
         "density": round(density, 4),
@@ -337,6 +355,9 @@ def _compute_graph_metrics(nodes: List[str], edges: List[Dict[str, Any]]
         "num_edges": num_edges,
         "connected_components": len(components),
         "largest_component_size": len(components[0]) if components else 0,
+        "largest_component_fraction": round(len(components[0]) / n, 4) if components and n > 0 else 0.0,
+        "clustering_coefficient": clustering_coefficient,
+        "avg_degree": avg_degree,
         "clusters": components[:10],  # top 10 components
         "degree_centrality": {k: round(v, 4) for k, v in list(degree_cent.items())[:30]},
         "betweenness_centrality": {k: v for k, v in list(betweenness.items())[:30]},

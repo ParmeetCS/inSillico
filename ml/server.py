@@ -1584,6 +1584,7 @@ from network_pharmacology.target_prediction import predict_targets
 from network_pharmacology.ppi_network import build_ppi_network
 from network_pharmacology.pathway_enrichment import enrich_pathways
 from network_pharmacology.disease_mapping import map_diseases
+from network_pharmacology.disease_inference import run_disease_inference
 
 
 @app.route("/network/targets", methods=["POST"])
@@ -1660,18 +1661,54 @@ def network_diseases():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/network/disease-inference", methods=["POST"])
+def network_disease_inference():
+    """
+    Run the 9-layer disease inference engine on pre-computed pipeline results.
+    Accepts targets, PPI, pathways, and diseases from individual API calls
+    and applies false-positive suppression, composite scoring, and AI gating.
+    """
+    data = request.get_json(force=True)
+    smiles = data.get("smiles", "")
+    compound_name = data.get("compound_name", "")
+    targets_result = data.get("targets", {})
+    ppi_result = data.get("ppi_network", {})
+    pathways_result = data.get("pathways", {})
+    diseases_result = data.get("diseases", {})
+
+    if not smiles or not targets_result:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    try:
+        inference = run_disease_inference(
+            smiles=smiles,
+            targets_result=targets_result,
+            ppi_result=ppi_result,
+            pathways_result=pathways_result,
+            diseases_result=diseases_result,
+            compound_name=compound_name,
+        )
+        return jsonify(inference)
+    except Exception as e:
+        logger.error(f"Disease inference failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/network/full-analysis", methods=["POST"])
 def network_full_analysis():
     """
-    Run the complete Network Pharmacology pipeline:
+    Run the complete Network Pharmacology pipeline with biologically
+    disciplined disease inference (v2.0):
       1. Predict targets from SMILES
       2. Build PPI network from targets
       3. Enrich pathways
-      4. Map diseases
+      4. Map diseases (raw)
+      5. Disease inference engine (9-layer false-positive suppression)
     Returns combined result in one response.
     """
     data = request.get_json(force=True)
     smiles = data.get("smiles", "")
+    compound_name = data.get("compound_name", "")
 
     if not smiles:
         return jsonify({"error": "Missing 'smiles' parameter"}), 400
@@ -1691,6 +1728,14 @@ def network_full_analysis():
                 "ppi_network": {"nodes": [], "edges": [], "metrics": {}},
                 "pathways": {"pathways": [], "pathway_count": 0},
                 "diseases": {"diseases": [], "disease_count": 0},
+                "disease_inference": {
+                    "diseases": [], "disease_count": 0,
+                    "ai_suggestion": {
+                        "has_suggestion": False,
+                        "message": "No targets predicted for this compound.",
+                        "confidence": "none",
+                    },
+                },
                 "summary": "No targets predicted for this compound.",
             })
 
@@ -1704,30 +1749,48 @@ def network_full_analysis():
         # Step 3: Pathway enrichment
         pathways_result = enrich_pathways(expanded_genes, p_threshold=data.get("p_threshold", 0.05))
 
-        # Step 4: Disease mapping
+        # Step 4: Raw disease mapping
         diseases_result = map_diseases(expanded_genes, top_k=data.get("disease_top_k", 25))
 
-        # Build summary
+        # Step 5: Disease inference engine (v2.0 — 9-layer false-positive suppression)
+        inference = run_disease_inference(
+            smiles=smiles,
+            targets_result=targets_result,
+            ppi_result=ppi_result,
+            pathways_result=pathways_result,
+            diseases_result=diseases_result,
+            compound_name=compound_name,
+        )
+
+        # Build summary from inference results
         target_count = targets_result.get("target_count", 0)
         pathway_count = pathways_result.get("pathway_count", 0)
-        disease_count = diseases_result.get("disease_count", 0)
-        top_areas = list(diseases_result.get("therapeutic_areas", {}).keys())[:3]
+        inferred_disease_count = inference.get("disease_count", 0)
+        suppressed_count = inference.get("suppressed_count", 0)
+        top_areas = list(inference.get("therapeutic_areas", {}).keys())[:3]
+        coherence = inference.get("network_coherence", {})
 
         summary = (
-            f"Identified {target_count} potential protein targets, "
-            f"{ppi_result.get('gene_count', 0)} nodes in PPI network, "
+            f"Identified {target_count} potential protein targets "
+            f"({inference.get('target_summary', {}).get('high_confidence', 0)} high-confidence), "
+            f"{ppi_result.get('gene_count', 0)} nodes in PPI network "
+            f"(coherence: {coherence.get('coherence_score', 0):.2f}), "
             f"{pathway_count} enriched pathways, and "
-            f"{disease_count} associated diseases."
+            f"{inferred_disease_count} validated disease associations "
+            f"({suppressed_count} suppressed by false-positive filters)."
         )
         if top_areas:
             summary += f" Top therapeutic areas: {', '.join(top_areas)}."
+        if coherence.get("flags"):
+            summary += f" Network flags: {'; '.join(coherence['flags'][:2])}."
 
         return jsonify({
             "smiles": smiles,
             "targets": targets_result,
             "ppi_network": ppi_result,
             "pathways": pathways_result,
-            "diseases": diseases_result,
+            "diseases": diseases_result,           # Raw diseases (backwards compat)
+            "disease_inference": inference,         # v2.0 inference results
             "summary": summary,
         })
 
