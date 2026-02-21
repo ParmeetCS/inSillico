@@ -23,10 +23,18 @@ from network_pharmacology.target_prediction import predict_targets
 from network_pharmacology.ppi_network import build_ppi_network
 from network_pharmacology.pathway_enrichment import enrich_pathways
 from network_pharmacology.disease_mapping import map_diseases
+from network_pharmacology.disease_inference import (
+    run_disease_inference,
+    filter_targets_by_confidence,
+    assess_network_coherence,
+)
 
 __all__ = [
     "predict_targets",
     "build_ppi_network",
     "enrich_pathways",
     "map_diseases",
+    "run_disease_inference",
+    "filter_targets_by_confidence",
+    "assess_network_coherence",
 ]

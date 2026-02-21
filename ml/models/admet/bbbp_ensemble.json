@@ -1,0 +1,13 @@
+{
+  "endpoint": "bbbp",
+  "task": "classification",
+  "weights": {
+    "random_forest": 0.45458891013384317,
+    "xgboost": 0.5454110898661568
+  },
+  "metrics": {
+    "accuracy": 0.8261,
+    "f1": 0.9029,
+    "auc": 0.494
+  }
+}

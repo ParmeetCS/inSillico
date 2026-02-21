@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
             ppi: "/network/ppi",
             pathways: "/network/pathways",
             diseases: "/network/diseases",
+            "disease-inference": "/network/disease-inference",
         };
 
         const endpoint = endpointMap[action] || "/network/full-analysis";

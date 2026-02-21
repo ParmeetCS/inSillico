@@ -1,0 +1,24 @@
+{
+  "endpoint": "toxicity",
+  "task": "classification",
+  "algorithm": "XGBoost",
+  "params": {
+    "n_estimators": 150,
+    "max_depth": 8,
+    "learning_rate": 0.02,
+    "subsample": 0.85,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 3,
+    "gamma": 0.1,
+    "reg_alpha": 0.05,
+    "reg_lambda": 1.5,
+    "random_state": 42,
+    "verbosity": 0,
+    "n_jobs": -1
+  },
+  "metrics": {
+    "accuracy": 0.9798,
+    "f1": 0.0,
+    "auc": 0.5
+  }
+}

@@ -44,3 +44,6 @@ next-env.d.ts
 __pycache__/
 *.pyc
 *.pyo
+
+# ML model binaries (large files, regenerate with train_admet.py)
+ml/models/admet/*.joblib

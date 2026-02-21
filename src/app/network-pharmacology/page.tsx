@@ -106,6 +106,58 @@ interface DiseaseResult {
     associated_genes: string[];
     gene_count: number;
     source: string;
+    // v2.0 inference fields
+    composite_score?: number;
+    target_confidence_weight?: number;
+    pathway_enrichment_weight?: number;
+    network_connectivity_weight?: number;
+    literature_support_weight?: number;
+    supporting_pathways?: string[];
+    supporting_targets?: string[];
+    supporting_targets_high?: string[];
+    pathway_supported?: boolean;
+    multi_target_check?: boolean;
+    multi_target_reason?: string;
+    network_support_level?: string;
+    applicability_domain?: string;
+    literature?: { literature_support: string; pubmed_count: number; score: number; disclaimer?: string };
+}
+interface DiseaseInference {
+    diseases: DiseaseResult[];
+    disease_count: number;
+    suppressed_diseases: DiseaseResult[];
+    suppressed_count: number;
+    therapeutic_areas: Record<string, number>;
+    network_coherence: {
+        is_coherent: boolean;
+        coherence_score: number;
+        flags: string[];
+        density: number;
+        avg_degree: number;
+        clustering_coefficient: number;
+        largest_component_fraction: number;
+    };
+    target_summary: {
+        total_predicted: number;
+        high_confidence: number;
+        medium_confidence: number;
+        low_confidence: number;
+    };
+    drug_validation: {
+        is_known_drug: boolean;
+        drug_name?: string;
+        alignment?: string;
+        flags: string[];
+    };
+    ai_suggestion: {
+        has_suggestion: boolean;
+        suggestion_type: string;
+        message: string;
+        confidence: string;
+        viable_diseases?: string[];
+        therapeutic_areas?: string[];
+    };
+    filtered_targets: TargetResult[];
 }
 interface FullAnalysisResult {
     smiles: string;
@@ -113,6 +165,7 @@ interface FullAnalysisResult {
     ppi_network: { nodes: PPINode[]; edges: PPIEdge[]; metrics: Record<string, unknown>; source: string };
     pathways: { pathways: PathwayResult[]; pathway_count: number; top_pathways: string[] };
     diseases: { diseases: DiseaseResult[]; disease_count: number; therapeutic_areas: Record<string, number> };
+    disease_inference?: DiseaseInference;
     summary: string;
 }
 
@@ -157,10 +210,10 @@ const PIPELINE_STEPS: PipelineStepConfig[] = [
         resultLabel: (r) => r.pathways ? `${r.pathways.pathway_count} enriched pathways` : "",
     },
     {
-        key: "diseases", label: "Disease Mapping", icon: Activity,
+        key: "diseases", label: "Disease Inference", icon: Activity,
         color: "var(--accent-red)", bg: "rgba(239,68,68,0.12)",
-        description: "Mapping disease associations from Open Targets platform…",
-        resultLabel: (r) => r.diseases ? `${r.diseases.disease_count} disease associations` : "",
+        description: "Running 9-layer disease inference with false-positive suppression…",
+        resultLabel: (r) => r.diseases ? `${r.diseases.disease_count} validated associations` : "",
     },
 ];
 
@@ -366,23 +419,45 @@ function NetworkPharmacologyInner() {
             updateStatus(2, "complete");
             setStepResults(prev => ({ ...prev, pathways: pathwayData }));
 
-            // ── Step 3: Disease Mapping ──
+            // ── Step 3: Disease Mapping + Inference ──
             setPipelineStep(3);
             updateStatus(3, "running");
             const t3 = Date.now();
             const diseaseData = await postAPI({ genes, action: "diseases" });
+
+            // Run v2.0 disease inference engine (9-layer false-positive suppression)
+            let inferenceData: DiseaseInference | undefined;
+            try {
+                inferenceData = await postAPI({
+                    smiles: smi,
+                    compound_name: selectedName || "",
+                    targets: targetsData,
+                    ppi_network: ppiData,
+                    pathways: pathwayData,
+                    diseases: diseaseData,
+                    action: "disease-inference",
+                });
+            } catch {
+                console.warn("Disease inference engine unavailable, using raw disease data");
+            }
+
             updateTiming(3, Date.now() - t3);
             updateStatus(3, "complete");
             setStepResults(prev => ({ ...prev, diseases: diseaseData }));
 
             // Assemble full result
+            const inferredCount = inferenceData?.disease_count ?? diseaseData.disease_count;
+            const suppressedCount = inferenceData?.suppressed_count ?? 0;
             const fullResult: FullAnalysisResult = {
                 smiles: smi,
                 targets: targetsData,
                 ppi_network: ppiData,
                 pathways: pathwayData,
                 diseases: diseaseData,
-                summary: `Identified ${targetsData.target_count} targets, ${ppiData.nodes?.length || 0} PPI nodes, ${pathwayData.pathway_count} pathways, and ${diseaseData.disease_count} disease associations.`,
+                disease_inference: inferenceData,
+                summary: inferenceData
+                    ? `Identified ${targetsData.target_count} targets (${inferenceData.target_summary?.high_confidence || 0} high-confidence), ${ppiData.nodes?.length || 0} PPI nodes (coherence: ${((inferenceData.network_coherence?.coherence_score || 0) * 100).toFixed(0)}%), ${pathwayData.pathway_count} pathways, ${inferredCount} validated diseases (${suppressedCount} suppressed).`
+                    : `Identified ${targetsData.target_count} targets, ${ppiData.nodes?.length || 0} PPI nodes, ${pathwayData.pathway_count} pathways, and ${diseaseData.disease_count} disease associations.`,
             };
 
             // Brief delay to show completed state before transitioning
@@ -426,11 +501,16 @@ function NetworkPharmacologyInner() {
                     ppi_nodes: result.ppi_network.nodes.length,
                     ppi_edges: result.ppi_network.edges.length,
                     pathways: result.pathways.pathway_count,
-                    diseases: result.diseases.disease_count,
+                    diseases: result.disease_inference?.disease_count ?? result.diseases.disease_count,
+                    suppressed_diseases: result.disease_inference?.suppressed_count ?? 0,
                     top_pathways: result.pathways.top_pathways?.slice(0, 5) || [],
-                    therapeutic_areas: result.diseases.therapeutic_areas,
+                    therapeutic_areas: result.disease_inference?.therapeutic_areas ?? result.diseases.therapeutic_areas,
                     hub_genes: (result.ppi_network.metrics.hub_genes as string[])?.slice(0, 5) || [],
                     top_targets: result.targets.targets.slice(0, 5).map(t => `${t.gene_name} (${(t.probability * 100).toFixed(0)}%)`),
+                    network_coherence: result.disease_inference?.network_coherence?.coherence_score,
+                    network_flags: result.disease_inference?.network_coherence?.flags || [],
+                    ai_suggestion: result.disease_inference?.ai_suggestion?.message,
+                    high_confidence_targets: result.disease_inference?.target_summary?.high_confidence ?? 0,
                 },
                 toxicity: {},
             }),
@@ -459,6 +539,20 @@ function NetworkPharmacologyInner() {
                 diseases: result.diseases,
                 summary: result.summary,
                 aiSuggestion,
+                disease_inference: result.disease_inference ? {
+                    disease_count: result.disease_inference.diseases?.length ?? 0,
+                    suppressed_count: result.disease_inference.suppressed_diseases?.length ?? 0,
+                    diseases: result.disease_inference.diseases,
+                    suppressed_diseases: result.disease_inference.suppressed_diseases,
+                    network_coherence: result.disease_inference.network_coherence,
+                    target_summary: result.disease_inference.filtered_targets ? {
+                        total: result.disease_inference.filtered_targets.length,
+                        high_confidence: result.disease_inference.filtered_targets.filter((t: any) => t.posterior_confidence >= 0.75).length,
+                    } : undefined,
+                    drug_validation: result.disease_inference.drug_validation,
+                    ai_suggestion: result.disease_inference.ai_suggestion?.message,
+                    therapeutic_areas: result.diseases.therapeutic_areas,
+                } : undefined,
             });
             haptic("success");
         } catch (e) {
@@ -1227,53 +1321,262 @@ function NetworkPharmacologyInner() {
                                 {/* ── Diseases ── */}
                                 {activeTab === "diseases" && (
                                     <motion.div key="diseases" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                                        <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Disease Associations</h3>
-                                        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 12 }}>
-                                            {result.diseases.disease_count} diseases across {Object.keys(result.diseases.therapeutic_areas).length} therapeutic areas
-                                        </p>
-                                        {/* Pills */}
-                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
-                                            {Object.entries(result.diseases.therapeutic_areas).map(([area, count]) => (
-                                                <span key={area} className="badge" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.18)", color: "rgba(248,113,113,0.9)" }}>
-                                                    {area}: {count as number}
-                                                </span>
-                                            ))}
-                                        </div>
-                                        <div style={{ overflowX: "auto" }}>
-                                            <table className="data-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Disease</th>
-                                                        <th>Therapeutic Area</th>
-                                                        <th style={{ width: 160 }}>Score</th>
-                                                        <th>Associated Genes</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {result.diseases.diseases.map((d, i) => (
-                                                        <tr key={i}>
-                                                            <td style={{ fontWeight: 600 }}>{d.disease_name}</td>
-                                                            <td>
-                                                                <span className="badge" style={{ background: "rgba(148,163,184,0.1)", color: "var(--text-secondary)" }}>
-                                                                    {d.therapeutic_area}
-                                                                </span>
-                                                            </td>
-                                                            <td><ScoreBar value={d.score} /></td>
-                                                            <td>
-                                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                                                    {d.associated_genes.map((g) => (
-                                                                        <span key={g} style={{
-                                                                            padding: "2px 6px", background: "rgba(59,130,246,0.08)",
-                                                                            borderRadius: 4, fontSize: "0.72rem", color: "var(--accent-blue-light)", fontFamily: "monospace",
-                                                                        }}>{g}</span>
-                                                                    ))}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
+                                        <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>
+                                            Disease Inference {result.disease_inference && <span style={{ fontSize: "0.68rem", color: "var(--accent-green)", fontWeight: 500, marginLeft: 8 }}>v2.0</span>}
+                                        </h3>
+
+                                        {/* ── v2 Inference Panel ── */}
+                                        {result.disease_inference ? (() => {
+                                            const inf = result.disease_inference;
+                                            const coh = inf.network_coherence;
+                                            const ai = inf.ai_suggestion;
+                                            const diseases = inf.diseases;
+                                            const areas = inf.therapeutic_areas;
+                                            return (
+                                                <>
+                                                    {/* AI Suggestion Banner */}
+                                                    <div className="glass-subtle" style={{
+                                                        padding: 14, marginBottom: 16,
+                                                        borderLeft: `3px solid ${ai.confidence === "high" ? "var(--accent-green)" : ai.confidence === "medium" ? "var(--accent-yellow, #f59e0b)" : "var(--accent-red)"}`,
+                                                    }}>
+                                                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                                            <Activity size={14} style={{ color: ai.has_suggestion ? "var(--accent-green)" : "var(--accent-red)" }} />
+                                                            <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                                                                {ai.has_suggestion ? "Therapeutic Suggestion" : "No Therapeutic Recommendation"}
+                                                            </span>
+                                                            <span className="badge" style={{
+                                                                background: ai.confidence === "high" ? "rgba(16,185,129,0.12)" : ai.confidence === "medium" ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
+                                                                color: ai.confidence === "high" ? "var(--accent-green)" : ai.confidence === "medium" ? "#f59e0b" : "var(--accent-red)",
+                                                                fontSize: "0.68rem",
+                                                            }}>
+                                                                {ai.confidence} confidence
+                                                            </span>
+                                                        </div>
+                                                        <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                                            {ai.message}
+                                                        </p>
+                                                    </div>
+
+                                                    {/* Inference Summary Cards */}
+                                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+                                                        <div className="glass-subtle" style={{ padding: 12, textAlign: "center" }}>
+                                                            <p style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--accent-green)" }}>{inf.disease_count}</p>
+                                                            <p style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>Validated Diseases</p>
+                                                        </div>
+                                                        <div className="glass-subtle" style={{ padding: 12, textAlign: "center" }}>
+                                                            <p style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--accent-red)" }}>{inf.suppressed_count}</p>
+                                                            <p style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>Suppressed (FP)</p>
+                                                        </div>
+                                                        <div className="glass-subtle" style={{ padding: 12, textAlign: "center" }}>
+                                                            <p style={{ fontSize: "1.2rem", fontWeight: 700, color: coh.is_coherent ? "var(--accent-green)" : "#f59e0b" }}>
+                                                                {(coh.coherence_score * 100).toFixed(0)}%
+                                                            </p>
+                                                            <p style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>Network Coherence</p>
+                                                        </div>
+                                                        <div className="glass-subtle" style={{ padding: 12, textAlign: "center" }}>
+                                                            <p style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--accent-blue)" }}>
+                                                                {inf.target_summary?.high_confidence || 0}
+                                                            </p>
+                                                            <p style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>High-Conf Targets</p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Network Coherence Flags */}
+                                                    {coh.flags && coh.flags.length > 0 && (
+                                                        <div style={{ marginBottom: 12, padding: "8px 12px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)", borderRadius: 8 }}>
+                                                            {coh.flags.map((flag: string, i: number) => (
+                                                                <p key={i} style={{ fontSize: "0.75rem", color: "#f59e0b", marginBottom: 2 }}>
+                                                                    ⚠ {flag}
+                                                                </p>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Drug Validation Banner */}
+                                                    {inf.drug_validation?.is_known_drug && (
+                                                        <div style={{
+                                                            marginBottom: 12, padding: "8px 12px",
+                                                            background: inf.drug_validation.alignment === "good" ? "rgba(16,185,129,0.06)" : "rgba(245,158,11,0.06)",
+                                                            border: `1px solid ${inf.drug_validation.alignment === "good" ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)"}`,
+                                                            borderRadius: 8,
+                                                        }}>
+                                                            <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
+                                                                Known drug: <strong>{inf.drug_validation.drug_name}</strong> — Prediction alignment: <strong>{inf.drug_validation.alignment}</strong>
+                                                            </p>
+                                                            {inf.drug_validation.flags?.map((flag: string, i: number) => (
+                                                                <p key={i} style={{ fontSize: "0.72rem", color: "#f59e0b", marginTop: 2 }}>{flag}</p>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Therapeutic Area Pills */}
+                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+                                                        {Object.entries(areas || {}).map(([area, count]) => (
+                                                            <span key={area} className="badge" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.18)", color: "rgba(248,113,113,0.9)" }}>
+                                                                {area}: {count as number}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+
+                                                    {/* Validated Disease Table */}
+                                                    <div style={{ overflowX: "auto" }}>
+                                                        <table className="data-table">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Disease</th>
+                                                                    <th>Area</th>
+                                                                    <th style={{ width: 120 }}>Composite Score</th>
+                                                                    <th>Network</th>
+                                                                    <th>Domain</th>
+                                                                    <th>High-Conf Targets</th>
+                                                                    <th>Pathways</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {diseases.map((d: DiseaseResult, i: number) => (
+                                                                    <tr key={i}>
+                                                                        <td style={{ fontWeight: 600 }}>{d.disease_name}</td>
+                                                                        <td>
+                                                                            <span className="badge" style={{ background: "rgba(148,163,184,0.1)", color: "var(--text-secondary)", fontSize: "0.68rem" }}>
+                                                                                {d.therapeutic_area}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td><ScoreBar value={d.composite_score ?? d.score} /></td>
+                                                                        <td>
+                                                                            <span className="badge" style={{
+                                                                                background: d.network_support_level === "Strong" ? "rgba(16,185,129,0.1)" : d.network_support_level === "Moderate" ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)",
+                                                                                color: d.network_support_level === "Strong" ? "var(--accent-green)" : d.network_support_level === "Moderate" ? "#f59e0b" : "var(--accent-red)",
+                                                                                fontSize: "0.68rem",
+                                                                            }}>
+                                                                                {d.network_support_level || "—"}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span className="badge" style={{
+                                                                                background: d.applicability_domain === "In-domain" ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
+                                                                                color: d.applicability_domain === "In-domain" ? "var(--accent-green)" : "var(--accent-red)",
+                                                                                fontSize: "0.68rem",
+                                                                            }}>
+                                                                                {d.applicability_domain || "—"}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                                                                                {(d.supporting_targets_high || []).map((g: string) => (
+                                                                                    <span key={g} style={{
+                                                                                        padding: "1px 5px", background: "rgba(16,185,129,0.1)",
+                                                                                        borderRadius: 3, fontSize: "0.68rem", color: "var(--accent-green)", fontFamily: "monospace",
+                                                                                    }}>{g}</span>
+                                                                                ))}
+                                                                                {(!d.supporting_targets_high || d.supporting_targets_high.length === 0) && (
+                                                                                    <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>—</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td>
+                                                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                                                                                {(d.supporting_pathways || []).slice(0, 3).map((p: string) => (
+                                                                                    <span key={p} style={{
+                                                                                        padding: "1px 5px", background: "rgba(139,92,246,0.08)",
+                                                                                        borderRadius: 3, fontSize: "0.66rem", color: "var(--accent-purple, #a78bfa)",
+                                                                                    }}>{p}</span>
+                                                                                ))}
+                                                                                {(!d.supporting_pathways || d.supporting_pathways.length === 0) && (
+                                                                                    <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>—</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+
+                                                    {/* Suppressed Diseases Accordion */}
+                                                    {inf.suppressed_count > 0 && (
+                                                        <details style={{ marginTop: 16 }}>
+                                                            <summary style={{
+                                                                cursor: "pointer", fontSize: "0.82rem", fontWeight: 600,
+                                                                color: "var(--text-muted)", marginBottom: 8,
+                                                            }}>
+                                                                {inf.suppressed_count} Suppressed Diseases (False-Positive Filtered)
+                                                            </summary>
+                                                            <div style={{ overflowX: "auto" }}>
+                                                                <table className="data-table" style={{ opacity: 0.65 }}>
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>Disease</th>
+                                                                            <th>Area</th>
+                                                                            <th>Reason</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {inf.suppressed_diseases.map((d: DiseaseResult & { suppression_reasons?: string[] }, i: number) => (
+                                                                            <tr key={i}>
+                                                                                <td style={{ textDecoration: "line-through", color: "var(--text-muted)" }}>{d.disease_name}</td>
+                                                                                <td><span className="badge" style={{ background: "rgba(148,163,184,0.05)", color: "var(--text-muted)", fontSize: "0.68rem" }}>{d.therapeutic_area}</span></td>
+                                                                                <td style={{ fontSize: "0.72rem", color: "var(--accent-red)" }}>
+                                                                                    {d.suppression_reasons?.join("; ") || d.multi_target_reason || "Filtered"}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </details>
+                                                    )}
+                                                </>
+                                            );
+                                        })() : (
+                                            /* ── Fallback: Legacy Disease Display ── */
+                                            <>
+                                                <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 12 }}>
+                                                    {result.diseases.disease_count} diseases across {Object.keys(result.diseases.therapeutic_areas).length} therapeutic areas
+                                                </p>
+                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+                                                    {Object.entries(result.diseases.therapeutic_areas).map(([area, count]) => (
+                                                        <span key={area} className="badge" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.18)", color: "rgba(248,113,113,0.9)" }}>
+                                                            {area}: {count as number}
+                                                        </span>
                                                     ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                </div>
+                                                <div style={{ overflowX: "auto" }}>
+                                                    <table className="data-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Disease</th>
+                                                                <th>Therapeutic Area</th>
+                                                                <th style={{ width: 160 }}>Score</th>
+                                                                <th>Associated Genes</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {result.diseases.diseases.map((d, i) => (
+                                                                <tr key={i}>
+                                                                    <td style={{ fontWeight: 600 }}>{d.disease_name}</td>
+                                                                    <td>
+                                                                        <span className="badge" style={{ background: "rgba(148,163,184,0.1)", color: "var(--text-secondary)" }}>
+                                                                            {d.therapeutic_area}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td><ScoreBar value={d.score} /></td>
+                                                                    <td>
+                                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                                                            {d.associated_genes?.map((g) => (
+                                                                                <span key={g} style={{
+                                                                                    padding: "2px 6px", background: "rgba(59,130,246,0.08)",
+                                                                                    borderRadius: 4, fontSize: "0.72rem", color: "var(--accent-blue-light)", fontFamily: "monospace",
+                                                                                }}>{g}</span>
+                                                                            ))}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </>
+                                        )}
                                     </motion.div>
                                 )}
 
@@ -1290,8 +1593,11 @@ function NetworkPharmacologyInner() {
                                                         ["Nodes", result.ppi_network.metrics.num_nodes],
                                                         ["Edges", result.ppi_network.metrics.num_edges],
                                                         ["Density", typeof result.ppi_network.metrics.density === "number" ? (result.ppi_network.metrics.density as number).toFixed(4) : result.ppi_network.metrics.density],
+                                                        ["Avg Degree", typeof result.ppi_network.metrics.avg_degree === "number" ? (result.ppi_network.metrics.avg_degree as number).toFixed(2) : result.ppi_network.metrics.avg_degree],
+                                                        ["Clustering Coeff", typeof result.ppi_network.metrics.clustering_coefficient === "number" ? (result.ppi_network.metrics.clustering_coefficient as number).toFixed(4) : result.ppi_network.metrics.clustering_coefficient],
                                                         ["Components", result.ppi_network.metrics.connected_components],
                                                         ["Largest Component", result.ppi_network.metrics.largest_component_size],
+                                                        ["LCC Fraction", typeof result.ppi_network.metrics.largest_component_fraction === "number" ? `${((result.ppi_network.metrics.largest_component_fraction as number) * 100).toFixed(1)}%` : result.ppi_network.metrics.largest_component_fraction],
                                                     ] as [string, unknown][]).map(([label, val]) => (
                                                         <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
                                                             <span style={{ color: "var(--text-muted)" }}>{label}</span>
