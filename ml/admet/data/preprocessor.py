@@ -334,7 +334,10 @@ class ADMETPreprocessor:
         """
         bin_counts = df[bin_col].value_counts()
         min_count = bin_counts.min()
-        max_allowed = int(min_count * max_ratio)
+        # If the smallest bin is too tiny, use a reasonable floor
+        # to avoid collapsing the entire dataset
+        effective_min = max(min_count, 50)
+        max_allowed = int(effective_min * max_ratio)
 
         balanced_parts = []
         for bin_label, count in bin_counts.items():

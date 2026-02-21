@@ -167,14 +167,18 @@ def train_endpoint(
 
     # ── 1. Fetch dataset ──
     logger.info("  Fetching dataset...")
+    import pandas as pd
+
     try:
-        df = fetcher.fetch_all_for_endpoint(endpoint)
+        dfs = fetcher.fetch_all_for_endpoint(endpoint)
     except Exception as e:
         logger.warning(f"  Dataset fetch failed: {e}")
-        # Try MoleculeNet fallback
+        dfs = []
+
+    # MoleculeNet fallback if fetch returned nothing
+    if not dfs:
         mn_datasets = DATASET_SOURCES["moleculenet"]["datasets"]
         if endpoint in mn_datasets:
-            import pandas as pd
             mn_cfg = mn_datasets[endpoint]
             mn_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
@@ -182,24 +186,30 @@ def train_endpoint(
                 mn_cfg["file"],
             )
             if os.path.exists(mn_path):
-                df = pd.read_csv(mn_path)
-                df = df.rename(columns={
+                fallback_df = pd.read_csv(mn_path)
+                fallback_df = fallback_df.rename(columns={
                     mn_cfg["smiles_col"]: "smiles",
                     mn_cfg["target_col"]: "target",
                 })
-                logger.info(f"  MoleculeNet fallback: {len(df)} rows")
+                fallback_df["source"] = "moleculenet"
+                dfs = [fallback_df]
+                logger.info(f"  MoleculeNet fallback: {len(fallback_df)} rows")
             else:
                 report["status"] = "error"
                 report["error"] = f"No data available for {endpoint}"
                 return report
         else:
             report["status"] = "error"
-            report["error"] = str(e)
+            report["error"] = f"No data sources for {endpoint}"
             return report
 
-    if df is None or len(df) < 20:
+    # Merge all fetched DataFrames into one
+    df = pd.concat(dfs, ignore_index=True)
+    df = df.drop_duplicates(subset=["smiles"], keep="first")
+
+    if len(df) < 20:
         report["status"] = "skipped"
-        report["reason"] = f"Insufficient data ({len(df) if df is not None else 0} samples)"
+        report["reason"] = f"Insufficient data ({len(df)} samples)"
         return report
 
     logger.info(f"  Raw dataset: {len(df)} rows")
@@ -207,11 +217,19 @@ def train_endpoint(
     # ── 2. Preprocess ──
     logger.info("  Preprocessing & standardizing...")
     try:
-        dataset = preprocessor.build_stratified_dataset(
+        preprocessor.reset_dedup_cache()
+        cleaned_df = preprocessor.preprocess_dataframe(
             df,
             smiles_col="smiles",
             target_col="target",
+            source_label=endpoint,
+        )
+        dataset = preprocessor.build_stratified_dataset(
+            cleaned_df,
             name=endpoint,
+            task=task,
+            description=config.get("description", ""),
+            target_unit=config.get("unit", ""),
         )
     except Exception as e:
         logger.warning(f"  Preprocessing failed: {e}")
@@ -225,7 +243,7 @@ def train_endpoint(
         return report
 
     logger.info(f"  After preprocessing: {len(dataset.smiles)} molecules")
-    logger.info(f"  Stats: {dataset.compute_stats()}")
+    logger.info(f"  Stats: {dataset.stats}")
 
     # ── 3. Compute features ──
     logger.info(f"  Computing hybrid features (ECFP6 + 26 physchem + 8 topo + 12 FG)...")
@@ -366,7 +384,7 @@ def train_endpoint(
     # ── 9. Fit Applicability Domain ──
     logger.info("  Fitting applicability domain...")
     ad = ApplicabilityDomain()
-    ad.fit(X_train, smiles_train)
+    ad.fit(smiles_train, X_train)
 
     # ── 10. Stratified Validation ──
     logger.info("  Running stratified validation...")
@@ -692,7 +710,7 @@ def main():
                 ad = ApplicabilityDomain()
                 ad_path = os.path.join(MODEL_DIR, f"{ep_name}_ad.joblib")
                 if os.path.exists(ad_path):
-                    ad = ApplicabilityDomain.load(ad_path)
+                    ad.load(ad_path)
 
                 endpoint_data[ep_name] = {"ensemble": ens, "ad": ad}
                 endpoint_ensembles[ep_name] = ens

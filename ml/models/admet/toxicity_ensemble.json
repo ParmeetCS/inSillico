@@ -1,0 +1,13 @@
+{
+  "endpoint": "toxicity",
+  "task": "classification",
+  "weights": {
+    "random_forest": 0.5,
+    "xgboost": 0.5
+  },
+  "metrics": {
+    "accuracy": 0.9798,
+    "f1": 0.0,
+    "auc": 0.4936
+  }
+}

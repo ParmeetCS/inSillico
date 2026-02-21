@@ -261,7 +261,7 @@ class HybridFingerprintCalculator:
             max_pc,
         ]
 
-        return np.array(descriptors, dtype=np.float32)
+        return np.array(descriptors, dtype=np.float64)
 
     def compute_topological(self, mol: Chem.Mol) -> np.ndarray:
         """
@@ -283,7 +283,7 @@ class HybridFingerprintCalculator:
             Descriptors.NOCount(mol),
         ]
 
-        return np.array(descriptors, dtype=np.float32)
+        return np.array(descriptors, dtype=np.float64)
 
     def compute_funcgroups(self, mol: Chem.Mol) -> np.ndarray:
         """
@@ -311,7 +311,7 @@ class HybridFingerprintCalculator:
             else:
                 indicators.append(0.0)
 
-        return np.array(indicators, dtype=np.float32)
+        return np.array(indicators, dtype=np.float64)
 
     def _safe_descriptor(self, func, mol, default: float = 0.0) -> float:
         """Safely compute a descriptor, returning default on failure."""
@@ -340,7 +340,10 @@ class HybridFingerprintCalculator:
         if self.use_funcgroups:
             parts.append(self.compute_funcgroups(mol))
 
-        return np.concatenate(parts)
+        result = np.concatenate(parts)
+        # Clamp any inf/nan values that slipped through
+        result = np.nan_to_num(result, nan=0.0, posinf=1e10, neginf=-1e10)
+        return result
 
     def compute_batch(self, smiles_list: List[str]) -> np.ndarray:
         """
