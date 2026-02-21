@@ -16,10 +16,10 @@ import {
     LogOut,
     Menu,
     X,
-    Coins,
     Sparkles,
     ChevronDown,
     Share2,
+    Pill,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { haptic } from "@/lib/haptics";
@@ -30,6 +30,7 @@ const navLinks = [
     { href: "/projects", label: "Projects", icon: FolderOpen },
     { href: "/molecules/new", label: "Molecules", icon: Atom },
     { href: "/reactions", label: "Reaction Lab", icon: FlaskConical },
+    { href: "/drug-intelligence", label: "Drug Intelligence", icon: Pill },
     { href: "/network-pharmacology", label: "Network Pharma", icon: Share2 },
     { href: "/simulations", label: "Simulations", icon: Activity },
     { href: "/results", label: "Results", icon: FileBarChart },
@@ -138,22 +139,6 @@ export function Navbar() {
                     <div className="navbar-actions">
                         {user ? (
                             <>
-                                {/* Credits Badge */}
-                                {profile && (
-                                    <motion.div
-                                        className="navbar-credits desktop-nav"
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.98 }}
-                                    >
-                                        <div className="navbar-credits-icon">
-                                            <Coins size={13} />
-                                        </div>
-                                        <span className="navbar-credits-value">{profile.credits}</span>
-                                        <span className="navbar-credits-label">credits</span>
-                                    </motion.div>
-                                )}
-
-                                {/* New Simulation CTA */}
                                 <motion.div whileHover={{ scale: 1.05, y: -1 }} whileTap={{ scale: 0.95 }}>
                                     <Link
                                         href="/molecules/new"
@@ -165,7 +150,6 @@ export function Navbar() {
                                     </Link>
                                 </motion.div>
 
-                                {/* User Avatar / Menu */}
                                 <div ref={dropdownRef} style={{ position: "relative" }}>
                                     <motion.button
                                         whileHover={{ scale: 1.05 }}
@@ -210,10 +194,6 @@ export function Navbar() {
                                                                 {user.email}
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                    <div className="navbar-dropdown-credits">
-                                                        <Coins size={13} />
-                                                        <span>{profile?.credits ?? 0} credits remaining</span>
                                                     </div>
                                                 </div>
                                                 <div className="navbar-dropdown-divider" />
@@ -552,42 +532,6 @@ export function Navbar() {
                     flex-shrink: 0;
                 }
 
-                /* Credits */
-                .navbar-credits {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 5px 12px;
-                    border-radius: 20px;
-                    background: rgba(59, 130, 246, 0.06);
-                    border: 1px solid rgba(59, 130, 246, 0.15);
-                    cursor: default;
-                    transition: all 0.2s ease;
-                }
-
-                .navbar-credits:hover {
-                    background: rgba(59, 130, 246, 0.1);
-                    border-color: rgba(59, 130, 246, 0.25);
-                }
-
-                .navbar-credits-icon {
-                    color: var(--accent-blue);
-                    display: flex;
-                    align-items: center;
-                }
-
-                .navbar-credits-value {
-                    font-size: 0.78rem;
-                    font-weight: 700;
-                    color: var(--accent-blue-light);
-                }
-
-                .navbar-credits-label {
-                    font-size: 0.72rem;
-                    font-weight: 500;
-                    color: var(--text-muted);
-                }
-
                 /* CTA Button */
                 .navbar-cta {
                     display: inline-flex;
@@ -709,26 +653,6 @@ export function Navbar() {
                     overflow: hidden;
                     text-overflow: ellipsis;
                     white-space: nowrap;
-                }
-
-                .navbar-dropdown-credits {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 6px 10px;
-                    border-radius: 8px;
-                    background: rgba(59, 130, 246, 0.08);
-                    border: 1px solid rgba(59, 130, 246, 0.12);
-                }
-
-                .navbar-dropdown-credits svg {
-                    color: var(--accent-blue);
-                }
-
-                .navbar-dropdown-credits span {
-                    font-size: 0.75rem;
-                    font-weight: 600;
-                    color: var(--accent-blue-light);
                 }
 
                 .navbar-dropdown-divider {
@@ -899,9 +823,6 @@ export function Navbar() {
                     }
                     .navbar-link {
                         padding: 7px 10px;
-                    }
-                    .navbar-credits-label {
-                        display: none;
                     }
                 }
             `}</style>

@@ -393,7 +393,7 @@ export default function ReactionLabPage() {
                                     <motion.button
                                         key={mode}
                                         whileTap={{ scale: 0.95 }}
-                                        onClick={() => setVisualizationMode(mode)}
+                                        onClick={() => setVisualizationMode(mode as "ball-stick" | "space-filling" | "pathway")}
                                         style={{
                                             padding: "8px 12px",
                                             borderRadius: 8,
@@ -497,7 +497,7 @@ export default function ReactionLabPage() {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3 }}
                 >
-                    <GlassCard glow="cyan" style={{ height: "100%" }}>
+                    <GlassCard glow="blue" style={{ height: "100%" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
                             <Gauge size={18} style={{ color: "var(--accent-cyan)" }} />
                             <h3 style={{ fontSize: "1rem", fontWeight: 700, margin: 0 }}>Reaction Conditions</h3>
