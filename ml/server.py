@@ -56,6 +56,25 @@ from qspr.models import RandomForestQSPR, XGBoostQSPR
 from qspr.ensemble import QSPREnsemble
 from qspr.serialization import ModelSerializer
 
+# ─── ADMET v4 imports ───
+try:
+    from admet.config import (
+        ADMET_ENDPOINTS,
+        MODEL_DIR as ADMET_MODEL_DIR,
+        MODEL_VERSION as ADMET_MODEL_VERSION,
+        DESCRIPTOR_VERSION as ADMET_DESCRIPTOR_VERSION,
+    )
+    from admet.features.hybrid_fingerprints import HybridFingerprintCalculator as ADMETFingerprintCalc
+    from admet.models.base import RandomForestADMET, XGBoostADMET
+    from admet.models.ensemble import ADMETEnsemble
+    from admet.models.prodrug_detector import ProdugDetector
+    from admet.models.metabolism import MetabolismPredictor
+    from admet.models.router import EnsembleRouter
+    from admet.domain.applicability import ApplicabilityDomain
+    ADMET_AVAILABLE = True
+except ImportError as _admet_err:
+    ADMET_AVAILABLE = False
+
 # ─── Logging ───
 logging.basicConfig(
     level=logging.INFO,
@@ -72,6 +91,10 @@ fp_calculator: MorganFingerprintCalculator = None
 ensembles: dict = {}       # prop_name → QSPREnsemble
 model_metadata: dict = {}  # prop_name → metadata dict
 _server_ready = False
+
+# ─── ADMET v4 state ───
+admet_router: EnsembleRouter = None
+_admet_ready = False
 
 # ─── Legacy fallback ───
 legacy_models: dict = {}
@@ -226,6 +249,113 @@ def load_qspr_models():
     )
 
 
+def load_admet_models():
+    """
+    Load ADMET v4 models at startup.
+
+    Attempts to load the EnsembleRouter with all trained endpoint models,
+    applicability domains, prodrug detector, and metabolism predictor.
+    """
+    global admet_router, _admet_ready
+
+    if not ADMET_AVAILABLE:
+        logger.warning("ADMET v4 package not available (import error)")
+        return
+
+    import joblib
+
+    router_path = os.path.join(ADMET_MODEL_DIR, "router.joblib")
+    if os.path.exists(router_path):
+        try:
+            admet_router = joblib.load(router_path)
+            _admet_ready = True
+            logger.info(f"  ✓ ADMET v4 router loaded: {admet_router.describe()}")
+            return
+        except Exception as e:
+            logger.warning(f"  Failed to load ADMET router: {e}")
+
+    # Fallback: rebuild router from individual model files
+    try:
+        router = EnsembleRouter()
+        loaded = 0
+
+        for endpoint, ep_cfg in ADMET_ENDPOINTS.items():
+            task = ep_cfg["task"]
+            rf_path = os.path.join(ADMET_MODEL_DIR, f"{endpoint}_random_forest.joblib")
+            xgb_path = os.path.join(ADMET_MODEL_DIR, f"{endpoint}_xgboost.joblib")
+            ens_cfg_path = os.path.join(ADMET_MODEL_DIR, f"{endpoint}_ensemble.json")
+            ad_path = os.path.join(ADMET_MODEL_DIR, f"{endpoint}_ad.joblib")
+
+            if not (os.path.exists(rf_path) and os.path.exists(xgb_path)):
+                continue
+
+            try:
+                rf_data = joblib.load(rf_path)
+                rf = RandomForestADMET(task=task, endpoint=endpoint)
+                rf.model = rf_data["model"]
+                rf.scaler = rf_data["scaler"]
+                rf._feature_names = rf_data.get("feature_names")
+                rf.is_fitted = True
+
+                xgb_data = joblib.load(xgb_path)
+                xgb_m = XGBoostADMET(task=task, endpoint=endpoint)
+                xgb_m.model = xgb_data["model"]
+                xgb_m.scaler = xgb_data["scaler"]
+                xgb_m._feature_names = xgb_data.get("feature_names")
+                xgb_m.is_fitted = True
+
+                # Load ensemble weights
+                weights = {"random_forest": 0.4, "xgboost": 0.6}
+                if os.path.exists(ens_cfg_path):
+                    with open(ens_cfg_path) as f:
+                        ens_json = json.load(f)
+                    weights = ens_json.get("weights", weights)
+
+                ensemble = ADMETEnsemble(task=task, endpoint=endpoint)
+                ensemble.add_model("random_forest", rf, weight=weights.get("random_forest", 0.4))
+                ensemble.add_model("xgboost", xgb_m, weight=weights.get("xgboost", 0.6))
+
+                router.register_ensemble(endpoint, "default", ensemble)
+                loaded += 1
+
+                # Load applicability domain
+                if os.path.exists(ad_path):
+                    ad = ApplicabilityDomain.load(ad_path)
+                    router.register_applicability_domain(endpoint, ad)
+
+            except Exception as e:
+                logger.warning(f"  ✗ Failed to load ADMET {endpoint}: {e}")
+
+        # Load shared modules
+        det_path = os.path.join(ADMET_MODEL_DIR, "prodrug_detector.joblib")
+        if os.path.exists(det_path):
+            try:
+                detector = joblib.load(det_path)
+                router.register_prodrug_detector(detector)
+                logger.info("  ✓ Prodrug detector loaded")
+            except Exception as e:
+                logger.warning(f"  Prodrug detector load failed: {e}")
+
+        met_path = os.path.join(ADMET_MODEL_DIR, "metabolism_predictor.joblib")
+        if os.path.exists(met_path):
+            try:
+                predictor = joblib.load(met_path)
+                router.register_metabolism_predictor(predictor)
+                logger.info("  ✓ Metabolism predictor loaded")
+            except Exception as e:
+                logger.warning(f"  Metabolism predictor load failed: {e}")
+
+        if loaded > 0:
+            admet_router = router
+            _admet_ready = True
+            logger.info(f"  ✓ ADMET v4: {loaded} endpoints loaded")
+        else:
+            logger.warning("  No ADMET v4 models found — run train_admet.py")
+
+    except Exception as e:
+        logger.warning(f"  ADMET v4 loading failed: {e}")
+
+
 def _predict_qspr(smiles: str, prop: str) -> dict:
     """
     Predict a property using the QSPR ensemble.
@@ -298,6 +428,11 @@ def health():
         "status": "healthy",
         "model_version": MODEL_VERSION,
         "engine": "QSPR v2.0 (ECFP4 + Ensemble)",
+        "admet_v4": {
+            "ready": _admet_ready,
+            "version": ADMET_MODEL_VERSION if ADMET_AVAILABLE else None,
+            "endpoints": admet_router.get_available_endpoints() if _admet_ready and admet_router else [],
+        },
         "properties_available": list(ensembles.keys()) or [
             "logp", "pka", "solubility", "tpsa", "bioavailability", "toxicity"
         ],
@@ -590,6 +725,169 @@ def drug_likeness():
         return jsonify({"smiles": smiles, **result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════
+#  ADMET v4 Endpoints
+# ═══════════════════════════════════════════════════
+
+@app.route("/admet/predict", methods=["POST"])
+def admet_predict():
+    """
+    Predict all ADMET properties using the v4 domain-aware system.
+
+    Request:
+      POST /admet/predict
+      {
+        "smiles": "CCO",
+        "include_metabolism": true,    (optional, default true)
+        "endpoints": ["logp", "bbbp"] (optional, default all)
+      }
+
+    Response:
+      {
+        "smiles": "CCO",
+        "predictions": { endpoint: { value, confidence, uncertainty, domain_status, ... } },
+        "chemical_class": { mw, tpsa, logp, route, ... },
+        "model_info": { version, engine, ... }
+      }
+    """
+    if not _admet_ready or admet_router is None:
+        return jsonify({
+            "error": "ADMET v4 models not loaded. Run: python train_admet.py",
+            "fallback": "Use /predict for QSPR v2 predictions",
+        }), 503
+
+    data = request.get_json()
+    if not data or "smiles" not in data:
+        return jsonify({"error": "Missing 'smiles' in request body"}), 400
+
+    smiles = data["smiles"].strip()
+    if not smiles:
+        return jsonify({"error": "Empty SMILES string"}), 400
+
+    include_metabolism = data.get("include_metabolism", True)
+    requested = data.get("endpoints")
+
+    try:
+        t_start = time.time()
+
+        # Classify molecule
+        chem_class = admet_router.classify_molecule(smiles)
+
+        # Choose which endpoints to predict
+        available = admet_router.get_available_endpoints()
+        if requested:
+            endpoints = [e for e in requested if e in available]
+        else:
+            endpoints = available
+
+        # Predict each endpoint
+        predictions = {}
+        for ep in endpoints:
+            try:
+                pred = admet_router.predict(ep, smiles, include_metabolism=include_metabolism)
+                predictions[ep] = pred.to_dict()
+            except Exception as e:
+                predictions[ep] = {"error": str(e)}
+
+        elapsed = time.time() - t_start
+
+        return jsonify({
+            "smiles": smiles,
+            "predictions": predictions,
+            "chemical_class": chem_class.to_dict(),
+            "model_info": {
+                "version": ADMET_MODEL_VERSION if ADMET_AVAILABLE else "unknown",
+                "engine": "ADMET v4.0 (ECFP6 + Domain-Aware Ensemble)",
+                "descriptor": ADMET_DESCRIPTOR_VERSION if ADMET_AVAILABLE else "unknown",
+                "prediction_time_ms": round(elapsed * 1000, 1),
+                "endpoints_predicted": len(predictions),
+                "endpoints_available": len(available),
+            },
+        })
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"ADMET prediction error: {e}", exc_info=True)
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
+
+
+@app.route("/admet/predict/<endpoint>", methods=["POST"])
+def admet_predict_single(endpoint):
+    """
+    Predict a single ADMET endpoint.
+
+    POST /admet/predict/logp
+    { "smiles": "CCO" }
+    """
+    if not _admet_ready or admet_router is None:
+        return jsonify({"error": "ADMET v4 models not loaded"}), 503
+
+    data = request.get_json()
+    if not data or "smiles" not in data:
+        return jsonify({"error": "Missing 'smiles'"}), 400
+
+    smiles = data["smiles"].strip()
+    include_metabolism = data.get("include_metabolism", True)
+
+    if endpoint not in admet_router.get_available_endpoints():
+        return jsonify({
+            "error": f"Unknown endpoint: {endpoint}",
+            "available": admet_router.get_available_endpoints(),
+        }), 404
+
+    try:
+        pred = admet_router.predict(endpoint, smiles, include_metabolism=include_metabolism)
+        return jsonify({
+            "smiles": smiles,
+            "endpoint": endpoint,
+            **pred.to_dict(),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admet/classify", methods=["POST"])
+def admet_classify():
+    """
+    Classify a molecule into chemical space regions.
+
+    POST /admet/classify
+    { "smiles": "CCO" }
+
+    Returns MW class, TPSA class, prodrug status, routing decision.
+    """
+    if not _admet_ready or admet_router is None:
+        return jsonify({"error": "ADMET v4 models not loaded"}), 503
+
+    data = request.get_json()
+    if not data or "smiles" not in data:
+        return jsonify({"error": "Missing 'smiles'"}), 400
+
+    smiles = data["smiles"].strip()
+
+    try:
+        chem_class = admet_router.classify_molecule(smiles)
+        return jsonify({
+            "smiles": smiles,
+            **chem_class.to_dict(),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admet/models", methods=["GET"])
+def admet_models():
+    """List ADMET v4 prediction capabilities."""
+    if not _admet_ready or admet_router is None:
+        return jsonify({
+            "status": "not_loaded",
+            "message": "Run train_admet.py to train ADMET v4 models",
+        })
+
+    return jsonify(admet_router.describe())
 
 
 # ─── QSPR Dataset Lookup ───
@@ -1450,14 +1748,17 @@ def _initialize():
     logger.info("=" * 60)
     logger.info("  InSilico Lab — ML + Voice AI Server v2.2")
     logger.info("  Engine: QSPR v2.0 (ECFP4 + Ensemble)")
+    logger.info("  ADMET:  v4.0 (ECFP6 + Domain-Aware)")
     logger.info("  Voice:  PersonaPlex + Gemini AI")
     logger.info("=" * 60)
 
     load_qspr_models()
+    load_admet_models()
 
     if not ensembles and not legacy_models:
         logger.warning(
             "No models found! Predictions will use fallback. Run:\n"
+            "  python train_admet.py     (ADMET v4)\n"
             "  python train_qspr.py      (QSPR v2)\n"
             "  python train_models.py    (Legacy v1)\n"
         )
@@ -1492,6 +1793,10 @@ if __name__ == "__main__":
     logger.info(f"\nStarting server on http://localhost:{FLASK_PORT}")
     logger.info(f"Endpoints:")
     logger.info(f"  POST /predict              — Predict all properties (QSPR ensemble)")
+    logger.info(f"  POST /admet/predict        — ADMET v4 domain-aware prediction (all endpoints)")
+    logger.info(f"  POST /admet/predict/<ep>   — ADMET v4 single endpoint prediction")
+    logger.info(f"  POST /admet/classify       — Classify molecule (MW/TPSA/prodrug)")
+    logger.info(f"  GET  /admet/models         — ADMET v4 capabilities")
     logger.info(f"  POST /descriptors          — Get molecular descriptors")
     logger.info(f"  POST /drug-likeness        — Drug-likeness assessment")
     logger.info(f"  POST /generate-3d          — 3D coordinates & conformers")

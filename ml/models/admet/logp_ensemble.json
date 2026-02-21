@@ -1,0 +1,12 @@
+{
+  "endpoint": "logp",
+  "task": "regression",
+  "weights": {
+    "random_forest": 0.3120966062877368,
+    "xgboost": 0.6879033937122632
+  },
+  "metrics": {
+    "r2": 0.2886,
+    "rmse": 1.042
+  }
+}

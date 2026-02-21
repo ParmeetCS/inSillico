@@ -1,0 +1,529 @@
+{
+  "pipeline_version": "4.0.0",
+  "model_version": "4.0.0",
+  "descriptor_version": "ecfp6_2048_hybrid_v1",
+  "trained_at": "2026-02-21 05:00:57 UTC",
+  "total_time_s": 57.26,
+  "split_method": "scaffold",
+  "cv_folds": 5,
+  "tuned": false,
+  "quick": true,
+  "endpoints_trained": [
+    "solubility",
+    "logp",
+    "bbbp",
+    "toxicity"
+  ],
+  "endpoints": {
+    "solubility": {
+      "endpoint": "solubility",
+      "task": "regression",
+      "status": "success",
+      "n_samples": 193,
+      "n_features": 2094,
+      "n_train": 155,
+      "n_test": 38,
+      "rf_metrics": {
+        "r2": 0.6745,
+        "rmse": 0.9769,
+        "mae": 0.7298
+      },
+      "xgb_metrics": {
+        "r2": 0.6356,
+        "rmse": 1.0336,
+        "mae": 0.7634
+      },
+      "ensemble_metrics": {
+        "r2": 0.6891,
+        "rmse": 0.9547
+      },
+      "weights": {
+        "random_forest": 0.5148461949469506,
+        "xgboost": 0.4851538050530494
+      },
+      "validation": {
+        "endpoint": "solubility",
+        "task": "regression",
+        "overall": {
+          "r2": 0.6891,
+          "rmse": 0.9547,
+          "mae": 0.7248,
+          "mean_confidence": 0.523,
+          "n_samples": 38
+        },
+        "mw_stratified": [
+          {
+            "stratum": "small",
+            "n": 37,
+            "r2": 0.6826,
+            "rmse": 0.9673,
+            "mae": 0.7409,
+            "mean_confidence": 0.5265,
+            "n_samples": 37
+          }
+        ],
+        "tpsa_stratified": [
+          {
+            "stratum": "low",
+            "n": 37,
+            "r2": 0.6882,
+            "rmse": 0.9335,
+            "mae": 0.7026,
+            "mean_confidence": 0.5216,
+            "n_samples": 37
+          }
+        ],
+        "calibration": {
+          "expected": [
+            0.3746705711233405,
+            0.457963227454446,
+            0.5532172398099131,
+            0.629294863541789
+          ],
+          "observed": [
+            1.0,
+            1.0,
+            0.8421052631578947,
+            0.8888888888888888
+          ],
+          "error": 0.429
+        },
+        "uncertainty": {
+          "spearman_correlation": {
+            "correlation": 0.0533,
+            "p_value": 0.7507
+          },
+          "oracle_metrics": {
+            "rmse_top25pct": 0.822,
+            "rmse_top50pct": 1.0174,
+            "rmse_top75pct": 0.9769
+          },
+          "mean_uncertainty": 0.954,
+          "std_uncertainty": 0.2343
+        },
+        "scaffold_gap": 0.0
+      },
+      "training_time_s": 6.43
+    },
+    "logp": {
+      "endpoint": "logp",
+      "task": "regression",
+      "status": "success",
+      "n_samples": 476,
+      "n_features": 2094,
+      "n_train": 380,
+      "n_test": 96,
+      "rf_metrics": {
+        "r2": 0.1499,
+        "rmse": 1.1391,
+        "mae": 0.8897
+      },
+      "xgb_metrics": {
+        "r2": 0.3304,
+        "rmse": 1.0109,
+        "mae": 0.8077
+      },
+      "ensemble_metrics": {
+        "r2": 0.2886,
+        "rmse": 1.042
+      },
+      "weights": {
+        "random_forest": 0.3120966062877368,
+        "xgboost": 0.6879033937122632
+      },
+      "validation": {
+        "endpoint": "logp",
+        "task": "regression",
+        "overall": {
+          "r2": 0.2886,
+          "rmse": 1.042,
+          "mae": 0.8255,
+          "mean_confidence": 0.7245,
+          "n_samples": 96
+        },
+        "mw_stratified": [
+          {
+            "stratum": "large",
+            "n": 24,
+            "r2": -0.555,
+            "rmse": 0.735,
+            "mae": 0.5965,
+            "mean_confidence": 0.7278,
+            "n_samples": 24
+          },
+          {
+            "stratum": "medium",
+            "n": 25,
+            "r2": 0.205,
+            "rmse": 1.1794,
+            "mae": 0.8602,
+            "mean_confidence": 0.7274,
+            "n_samples": 25
+          },
+          {
+            "stratum": "small",
+            "n": 47,
+            "r2": 0.3859,
+            "rmse": 1.0963,
+            "mae": 0.924,
+            "mean_confidence": 0.7212,
+            "n_samples": 47
+          }
+        ],
+        "tpsa_stratified": [
+          {
+            "stratum": "low",
+            "n": 80,
+            "r2": 0.3362,
+            "rmse": 0.9717,
+            "mae": 0.7959,
+            "mean_confidence": 0.7292,
+            "n_samples": 80
+          },
+          {
+            "stratum": "moderate",
+            "n": 16,
+            "r2": -0.0318,
+            "rmse": 1.3393,
+            "mae": 0.9734,
+            "mean_confidence": 0.7005,
+            "n_samples": 16
+          }
+        ],
+        "calibration": {
+          "expected": [
+            0.6696204946228603,
+            0.7451006009914825,
+            0.8055228236788359
+          ],
+          "observed": [
+            0.75,
+            0.7741935483870968,
+            1.0
+          ],
+          "error": 0.1013
+        },
+        "uncertainty": {
+          "spearman_correlation": {
+            "correlation": 0.1368,
+            "p_value": 0.1837
+          },
+          "oracle_metrics": {
+            "rmse_top25pct": 0.7793,
+            "rmse_top50pct": 0.8967,
+            "rmse_top75pct": 1.0231
+          },
+          "mean_uncertainty": 0.5511,
+          "std_uncertainty": 0.097
+        },
+        "scaffold_gap": 0.0
+      },
+      "training_time_s": 16.38
+    },
+    "bbbp": {
+      "endpoint": "bbbp",
+      "task": "classification",
+      "status": "success",
+      "n_samples": 560,
+      "n_features": 2094,
+      "n_train": 445,
+      "n_test": 115,
+      "rf_metrics": {
+        "accuracy": 0.8435,
+        "f1": 0.9151,
+        "auc": 0.4755
+      },
+      "xgb_metrics": {
+        "accuracy": 0.7739,
+        "f1": 0.8673,
+        "auc": 0.5705
+      },
+      "ensemble_metrics": {
+        "accuracy": 0.8261,
+        "f1": 0.9029,
+        "auc": 0.494
+      },
+      "weights": {
+        "random_forest": 0.45458891013384317,
+        "xgboost": 0.5454110898661568
+      },
+      "validation": {
+        "endpoint": "bbbp",
+        "task": "classification",
+        "overall": {
+          "accuracy": 0.8261,
+          "f1": 0.9029,
+          "precision": 0.8942,
+          "recall": 0.9118,
+          "mean_confidence": 0.7107,
+          "n_samples": 115,
+          "auc": 0.5328
+        },
+        "mw_stratified": [
+          {
+            "stratum": "medium",
+            "n": 68,
+            "accuracy": 0.8971,
+            "f1": 0.9457,
+            "precision": 1.0,
+            "recall": 0.8971,
+            "mean_confidence": 0.6653,
+            "n_samples": 68
+          },
+          {
+            "stratum": "small",
+            "n": 43,
+            "accuracy": 0.7442,
+            "f1": 0.8493,
+            "precision": 0.7381,
+            "recall": 1.0,
+            "mean_confidence": 0.7967,
+            "n_samples": 43,
+            "auc": 0.5417
+          }
+        ],
+        "tpsa_stratified": [
+          {
+            "stratum": "low",
+            "n": 84,
+            "accuracy": 0.869,
+            "f1": 0.9281,
+            "precision": 0.8875,
+            "recall": 0.9726,
+            "mean_confidence": 0.7624,
+            "n_samples": 84,
+            "auc": 0.5772
+          },
+          {
+            "stratum": "moderate",
+            "n": 31,
+            "accuracy": 0.7097,
+            "f1": 0.8302,
+            "precision": 0.9167,
+            "recall": 0.7586,
+            "mean_confidence": 0.5708,
+            "n_samples": 31,
+            "auc": 0.3793
+          }
+        ],
+        "calibration": {
+          "expected": [
+            0.47011984952801733,
+            0.545655036337107,
+            0.6355527582504483,
+            0.7487561124461226,
+            0.8513817332444215,
+            0.9231918693140069
+          ],
+          "observed": [
+            0.7777777777777778,
+            0.782608695652174,
+            0.8,
+            0.8,
+            0.8461538461538461,
+            0.9411764705882353
+          ],
+          "error": 0.1306
+        },
+        "uncertainty": {
+          "spearman_correlation": {
+            "correlation": 0.19,
+            "p_value": 0.0419
+          },
+          "oracle_metrics": {
+            "accuracy_top25pct": 0.8276,
+            "accuracy_top50pct": 0.8621,
+            "accuracy_top75pct": 0.8837
+          },
+          "mean_uncertainty": 0.0448,
+          "std_uncertainty": 0.0381
+        },
+        "scaffold_gap": 0.0
+      },
+      "training_time_s": 12.95
+    },
+    "toxicity": {
+      "endpoint": "toxicity",
+      "task": "classification",
+      "status": "success",
+      "n_samples": 914,
+      "n_features": 2094,
+      "n_train": 716,
+      "n_test": 198,
+      "rf_metrics": {
+        "accuracy": 0.9798,
+        "f1": 0.0,
+        "auc": 0.5
+      },
+      "xgb_metrics": {
+        "accuracy": 0.9798,
+        "f1": 0.0,
+        "auc": 0.5
+      },
+      "ensemble_metrics": {
+        "accuracy": 0.9798,
+        "f1": 0.0,
+        "auc": 0.4936
+      },
+      "weights": {
+        "random_forest": 0.5,
+        "xgboost": 0.5
+      },
+      "validation": {
+        "endpoint": "toxicity",
+        "task": "classification",
+        "overall": {
+          "accuracy": 0.9798,
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "mean_confidence": 0.8755,
+          "n_samples": 198,
+          "auc": 0.5
+        },
+        "mw_stratified": [
+          {
+            "stratum": "large",
+            "n": 17,
+            "accuracy": 1.0,
+            "f1": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "mean_confidence": 0.861,
+            "n_samples": 17
+          },
+          {
+            "stratum": "medium",
+            "n": 47,
+            "accuracy": 1.0,
+            "f1": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "mean_confidence": 0.8858,
+            "n_samples": 47
+          },
+          {
+            "stratum": "small",
+            "n": 134,
+            "accuracy": 0.9701,
+            "f1": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "mean_confidence": 0.8738,
+            "n_samples": 134,
+            "auc": 0.5
+          }
+        ],
+        "tpsa_stratified": [
+          {
+            "stratum": "high",
+            "n": 6,
+            "accuracy": 1.0,
+            "f1": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "mean_confidence": 0.9307,
+            "n_samples": 6
+          },
+          {
+            "stratum": "low",
+            "n": 138,
+            "accuracy": 0.971,
+            "f1": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "mean_confidence": 0.8755,
+            "n_samples": 138,
+            "auc": 0.5
+          },
+          {
+            "stratum": "moderate",
+            "n": 54,
+            "accuracy": 1.0,
+            "f1": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "mean_confidence": 0.8693,
+            "n_samples": 54
+          }
+        ],
+        "calibration": {
+          "expected": [
+            0.6584387723999893,
+            0.7659858808381743,
+            0.8643947167159806,
+            0.9331336651514476
+          ],
+          "observed": [
+            1.0,
+            1.0,
+            0.974025974025974,
+            0.9770114942528736
+          ],
+          "error": 0.1823
+        },
+        "uncertainty": {
+          "spearman_correlation": {
+            "correlation": 0.0415,
+            "p_value": 0.562
+          },
+          "oracle_metrics": {
+            "accuracy_top25pct": 1.0,
+            "accuracy_top50pct": 0.9899,
+            "accuracy_top75pct": 0.973
+          },
+          "mean_uncertainty": 0.027,
+          "std_uncertainty": 0.0267
+        },
+        "scaffold_gap": 0.0
+      },
+      "training_time_s": 17.56
+    }
+  },
+  "shared_modules": {
+    "prodrug_detector": "trained",
+    "metabolism_predictor": "trained"
+  },
+  "router": {
+    "version": "4.0.0",
+    "system": "ADMET Domain-Aware Prediction",
+    "endpoints": {
+      "solubility": {
+        "routes": [
+          "default"
+        ],
+        "has_ad": true
+      },
+      "logp": {
+        "routes": [
+          "default"
+        ],
+        "has_ad": true
+      },
+      "bbbp": {
+        "routes": [
+          "default"
+        ],
+        "has_ad": true
+      },
+      "toxicity": {
+        "routes": [
+          "default"
+        ],
+        "has_ad": true
+      }
+    },
+    "has_prodrug_detection": true,
+    "has_metabolism": true,
+    "feature_calculator": {
+      "type": "Hybrid ECFP6 + PhysChem + Topological + FuncGroup",
+      "radius": 3,
+      "n_bits": 2048,
+      "n_physchem": 26,
+      "n_topological": 8,
+      "n_funcgroups": 12,
+      "n_features": 2094,
+      "version": "ecfp6_2048_hybrid_v1"
+    }
+  }
+}

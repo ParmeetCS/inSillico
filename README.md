@@ -31,7 +31,8 @@
   <img src="https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-3ecf8e?logo=supabase" />
   <img src="https://img.shields.io/badge/Python-ML%20Backend-3776ab?logo=python" />
   <img src="https://img.shields.io/badge/QSPR-v2.0_Ensemble-ff6600" />
-  <img src="https://img.shields.io/badge/RDKit-ECFP4_2048-005571" />
+  <img src="https://img.shields.io/badge/ADMET-v4.0_Domain--Aware-e11d48" />
+  <img src="https://img.shields.io/badge/RDKit-ECFP6_2094-005571" />
   <img src="https://img.shields.io/badge/ChEMBL_34-Target_Prediction-2563eb" />
   <img src="https://img.shields.io/badge/STRING_DB-PPI_Network-8b5cf6" />
   <img src="https://img.shields.io/badge/Open_Targets-Disease_Mapping-ef4444" />
@@ -52,10 +53,17 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 
 ## ✨ Features
 
-### 🔬 Molecular Property Prediction (QSPR v2.0)
+### 🔬 Molecular Property Prediction (QSPR v2.0 + ADMET v4.0)
 - Predict **Aqueous Solubility (logS)**, **Lipophilicity (logD)**, **Blood-Brain Barrier Penetration**, and **Clinical Toxicity** from any SMILES input
 - **QSPR v2.0 Ensemble Engine**: **RandomForest + XGBoost** with Optuna-tuned hyperparameters, trained on MoleculeNet benchmarks (ESOL, Lipophilicity, BBBP, ClinTox)
-- **2056-dimensional feature vector**: Morgan Fingerprints (ECFP4, radius 2, 2048 bits) + 8 physicochemical descriptors (MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3)
+- **ADMET v4.0 Domain-Aware Prediction System** — 17 ADMET endpoints with applicability domain awareness, prodrug detection, and metabolism-informed bioavailability:
+  - **2094-dimensional hybrid features**: ECFP6 (radius 3, 2048 bits) + 26 physicochemical + 8 topological + 12 functional group descriptors
+  - **Applicability domain**: 5-method composite (Tanimoto 30%, Mahalanobis 25%, Isolation Forest 20%, PCA 15%, Leverage 10%) — flags out-of-domain molecules with calibrated uncertainty inflation
+  - **Prodrug detection**: 11 SMARTS patterns (phosphoramidate, ester, carbamate, protide, etc.) + ML classifier trained on DrugBank labels
+  - **Metabolism-aware**: CYP450 inhibition (2D6/3A4/2C9), P-gp substrate prediction, plasma protein binding, first-pass bioavailability estimation ($F = f_a \times f_g \times f_h$)
+  - **Ensemble routing**: MW/TPSA/functional-group classification routes molecules to specialized models (small oral drugs, large antivirals, prodrugs)
+  - **Stratified validation**: MW/TPSA-binned evaluation, calibration curves, uncertainty quantification
+  - Overcomes failures in: high MW compounds (>500 Da), nucleoside analogues, phosphoramidate prodrugs, large antivirals (e.g., Remdesivir), high TPSA molecules (>150 Å²)
 - Drug-likeness assessment: Lipinski Rule-of-Five, Veber rules, Ghose filter + structural alert screening (PAINS/Brenk)
 - **QSPR Dataset Lookup** — query training datasets for experimentally measured values by SMILES or compound name
 - Each property classified as `optimal` / `moderate` / `poor` with color-coded insights
@@ -230,7 +238,7 @@ Each step card transitions through `waiting → running → complete` with:
 |-----------|---------|
 | **Supabase** | Auth, PostgreSQL database, RLS |
 | **Flask** | Python ML API server (port 5001) |
-| **RDKit** | Morgan fingerprints (ECFP4) + physicochemical descriptors + 3D conformer generation |
+| **RDKit** | Morgan fingerprints (ECFP4/ECFP6) + physicochemical descriptors + 3D conformer generation |
 | **XGBoost** | Gradient boosting ensemble member |
 | **scikit-learn** | RandomForest ensemble member, preprocessing |
 | **Optuna** | Bayesian hyperparameter tuning |
@@ -291,18 +299,22 @@ Each step card transitions through `waiting → running → complete` with:
    │  (Port 5001)            │         │                         │
    │                         │         │  Function calling +     │
    │  ┌───────────────────┐  │         │  QSPR dataset context   │
-   │  │ ECFP4 Fingerprints│  │         │  injection              │
-   │  │ 2048 bits + 8     │  │         └─────────────────────────┘
-   │  │ physicochemical   │  │
-   │  │ = 2056-dim vector │  │
+   │  │ ECFP6 + ECFP4 FPs │  │         │  injection              │
+   │  │ 2094 / 2056 dims  │  │         └─────────────────────────┘
    │  │ Drug-likeness +   │  │
    │  │ PAINS/Brenk       │  │
    │  └───────┬───────────┘  │
    │  ┌───────▼───────────┐  │
-   │  │ QSPR v2.0         │  │
-   │  │ Ensemble Engine    │  │
-   │  │ RandomForest +     │  │
-   │  │ XGBoost (8 models) │  │
+   │  │ ADMET v4.0         │  │
+   │  │ 17 ADMET endpoints │  │
+   │  │ Applicability Dom. │  │
+   │  │ Prodrug Detection  │  │
+   │  │ Metabolism-Aware   │  │
+   │  │ Ensemble Routing   │  │
+   │  └───────────────────┘  │
+   │  ┌───────────────────┐  │
+   │  │ QSPR v2.0 (legacy) │  │
+   │  │ RF + XGB (8 models)│  │
    │  │ + 4 legacy DT      │  │
    │  └───────────────────┘  │
    │  ┌───────────────────┐  │
@@ -469,6 +481,10 @@ Navigate to `/network-pharmacology` to run a full **systems pharmacology pipelin
 | `POST` | `/predict` | Full QSPR ensemble property prediction from SMILES |
 | `POST` | `/descriptors` | Raw molecular descriptor computation (ECFP4 + physicochemical) |
 | `POST` | `/drug-likeness` | Lipinski, Veber, Ghose assessment + PAINS/Brenk alerts |
+| `POST` | `/admet/predict` | **ADMET v4** — predict all endpoints with domain awareness, prodrug detection & metabolism |
+| `POST` | `/admet/predict/:endpoint` | **ADMET v4** — single endpoint prediction (e.g., `/admet/predict/logp`) |
+| `POST` | `/admet/classify` | Classify molecule into chemical space (MW/TPSA class, prodrug status, routing) |
+| `GET` | `/admet/models` | List ADMET v4 capabilities and registered endpoints |
 | `POST` | `/generate-3d` | Generate 3D coordinates + conformers for Three.js viewer (RDKit + MMFF94) |
 | `POST` | `/generate-reaction-3d` | Generate reaction 3D geometries with atom padding for morphing |
 | `POST` | `/qspr/lookup` | Look up a molecule in training datasets by SMILES or name |
@@ -528,6 +544,24 @@ curl -X POST http://localhost:5001/drug-likeness \
 # Dataset statistics
 curl http://localhost:5001/qspr/stats
 
+# ADMET v4 — predict all endpoints for a molecule
+curl -X POST http://localhost:5001/admet/predict \
+  -H "Content-Type: application/json" \
+  -d '{"smiles": "CC(=O)Oc1ccccc1C(=O)O"}'
+
+# ADMET v4 — single endpoint prediction
+curl -X POST http://localhost:5001/admet/predict/logp \
+  -H "Content-Type: application/json" \
+  -d '{"smiles": "CC(=O)Oc1ccccc1C(=O)O"}'
+
+# ADMET v4 — classify molecule into chemical space
+curl -X POST http://localhost:5001/admet/classify \
+  -H "Content-Type: application/json" \
+  -d '{"smiles": "CC(=O)Oc1ccccc1C(=O)O"}'
+
+# ADMET v4 — list available endpoints
+curl http://localhost:5001/admet/models
+
 # Network Pharmacology — predict targets
 curl -X POST http://localhost:5001/network/targets \
   -H "Content-Type: application/json" \
@@ -557,6 +591,56 @@ curl -X POST http://localhost:5001/network/full-analysis \
 
 The prediction engine uses a **weighted ensemble** of RandomForest and XGBoost, with weights determined by cross-validation performance. Legacy Decision Tree + XGBoost v1 models are available as fallbacks.
 
+### ADMET Engine v4.0 (Domain-Aware)
+
+A comprehensive **domain-aware ADMET prediction system** that overcomes failures in high MW compounds, nucleoside analogues, phosphoramidate prodrugs, and large antivirals. Runs alongside QSPR v2 with full backward compatibility.
+
+#### ADMET Endpoints (17 total)
+
+| Category | Endpoint | Task | Description |
+|----------|----------|------|-------------|
+| **Absorption** | `solubility` | Regression | Aqueous Solubility (logS) |
+| | `caco2` | Regression | Caco-2 Cell Permeability |
+| | `pgp_substrate` | Classification | P-glycoprotein Substrate |
+| | `oral_bioavailability` | Classification | Oral Bioavailability ≥30% |
+| **Distribution** | `logp` | Regression | Lipophilicity (logP/logD) |
+| | `bbbp` | Classification | Blood-Brain Barrier Penetration |
+| | `ppb` | Regression | Plasma Protein Binding |
+| | `vdss` | Regression | Volume of Distribution |
+| **Metabolism** | `cyp2d6_inhibitor` | Classification | CYP2D6 Inhibition |
+| | `cyp3a4_inhibitor` | Classification | CYP3A4 Inhibition |
+| | `cyp2c9_inhibitor` | Classification | CYP2C9 Inhibition |
+| | `half_life` | Regression | Human Half-Life |
+| **Excretion** | `clearance` | Regression | Total Clearance |
+| **Toxicity** | `toxicity` | Classification | Clinical Trial Toxicity |
+| | `herg` | Classification | hERG Channel Inhibition |
+| | `ames` | Classification | Ames Mutagenicity |
+| | `dili` | Classification | Drug-Induced Liver Injury |
+
+#### ADMET Feature Engineering (2,094 dimensions)
+
+| Feature Type | Count | Details |
+|-------------|-------|---------|
+| **Morgan Fingerprints (ECFP6)** | 2,048 | Radius 3, captures larger substructural neighborhoods than ECFP4 |
+| **Physicochemical Descriptors** | 26 | MW, TPSA, LogP, HBD, HBA, RotBonds + LabuteASA, PEOE_VSA, BalabanJ, Chi0n, Kappa1-3, etc. |
+| **Topological Descriptors** | 8 | BertzCT, HallKierAlpha, Ipc, NumAliphaticRings, NumSaturatedRings, etc. |
+| **Functional Group Indicators** | 12 | Phosphoramidate, ester, carbamate, amide, sulfonamide, nucleoside_core, phosphate, etc. |
+
+#### ADMET Architecture
+
+| Component | Configuration |
+|-----------|---------------|
+| **RandomForest** | 1,000 estimators, sqrt features, class_weight=balanced |
+| **XGBoost** | 600 estimators, max_depth=8, lr=0.02, subsample=0.85 |
+| **Ensemble** | Weighted average with domain-aware uncertainty inflation |
+| **Applicability Domain** | 5-method composite: Tanimoto (30%) + Mahalanobis (25%) + Isolation Forest (20%) + PCA (15%) + Leverage (10%) |
+| **Prodrug Detection** | 11 SMARTS patterns + RF classifier (DrugBank labels) |
+| **Metabolism** | CYP450 + P-gp + PPB → bioavailability: $F = f_a \times f_g \times f_h$ |
+| **Routing** | MW/TPSA/functional-group → small_oral / large_antiviral / prodrug / default |
+| **Validation** | MW/TPSA-stratified, calibration curves, uncertainty quantification |
+| **Tuning** | Optuna Bayesian optimization (80 trials, 5-fold scaffold CV) |
+| **Data Sources** | MoleculeNet + ChEMBL + PubChem + DrugBank + ZINC15 + ADMETlab |
+
 ### Training Data (MoleculeNet Benchmarks)
 
 | Dataset | Task | Compounds | Property | Unit |
@@ -566,14 +650,14 @@ The prediction engine uses a **weighted ensemble** of RandomForest and XGBoost, 
 | **BBBP** | Classification | 2,050 | Blood-Brain Barrier Penetration | binary |
 | **ClinTox** | Classification | 1,484 | Clinical Toxicity | binary |
 
-### Feature Engineering (2,056 dimensions)
+### QSPR v2 Feature Engineering (2,056 dimensions)
 
 | Feature Type | Count | Details |
 |-------------|-------|---------| 
 | **Morgan Fingerprints (ECFP4)** | 2,048 | Radius 2, captures substructural fragments of diameter 4 |
 | **Physicochemical Descriptors** | 8 | MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3 |
 
-### Model Architecture
+### QSPR v2 Model Architecture
 
 | Component | Configuration |
 |-----------|---------------|
@@ -620,6 +704,15 @@ ml/models/
 │   ├── *_ensemble.meta.json                 # Ensemble weights + eval metrics
 │   ├── *.meta.json                          # Per-model metadata
 │   └── training_report.json                 # Full training report
+├── admet/                                   # ADMET v4.0 domain-aware models
+│   ├── *_random_forest.joblib               # Per-endpoint RF models
+│   ├── *_xgboost.joblib                     # Per-endpoint XGBoost models
+│   ├── *_ensemble.json                      # Per-endpoint ensemble weights
+│   ├── *_ad.joblib                          # Per-endpoint applicability domains
+│   ├── prodrug_detector.joblib              # Shared prodrug detection model
+│   ├── metabolism_predictor.joblib           # Shared metabolism prediction model
+│   ├── router.joblib                        # Ensemble router (all endpoints)
+│   └── training_report.json                 # Full ADMET training report
 ├── *_xgboost.joblib                         # Legacy v1 models (fallback)
 ├── *_decision_tree.joblib                   # Legacy v1 models (fallback)
 └── training_metadata.json                   # Legacy training metadata
@@ -628,7 +721,24 @@ ml/models/
 ### Training & Evaluation Commands
 
 ```bash
-# Full training with Optuna hyperparameter tuning (recommended)
+# ── ADMET v4.0 (recommended) ──
+
+# Full ADMET training with Optuna tuning (17 endpoints)
+python ml/train_admet.py --tune
+
+# Standard ADMET training (default hyperparameters)
+python ml/train_admet.py
+
+# Quick ADMET training (150 estimators, for testing)
+python ml/train_admet.py --quick
+
+# Train only specific endpoints
+python ml/train_admet.py --endpoint logp
+python ml/train_admet.py --endpoints logp,bbbp,toxicity
+
+# ── QSPR v2.0 (legacy, still supported) ──
+
+# Full training with Optuna hyperparameter tuning
 npm run ml:train:tune
 # → Trains RF + XGB for all 4 properties with Bayesian optimization
 
@@ -731,8 +841,27 @@ inSillico/
 │   ├── download_moleculenet.py     # Dataset download utility
 │   ├── test_api.py                 # API integration tests
 │   ├── test_consistency.py         # Model consistency tests
+│   ├── train_admet.py             # 🧪 ADMET v4.0 training pipeline
 │   ├── requirements.txt            # Python dependencies
 │   ├── Dockerfile                  # Docker image for Railway deployment
+│   ├── admet/                      # 🧪 ADMET v4.0 Domain-Aware Package
+│   │   ├── __init__.py            #   Package root (v1.0.0)
+│   │   ├── config.py              #   Central config (17 endpoints, 6 data sources, hyperparams)
+│   │   ├── data/
+│   │   │   ├── fetcher.py         #   Multi-source dataset fetching (ChEMBL, PubChem, DrugBank, ZINC15)
+│   │   │   └── preprocessor.py    #   SMILES standardization, dedup, MW/TPSA stratification
+│   │   ├── features/
+│   │   │   └── hybrid_fingerprints.py  # ECFP6 + 26 physchem + 8 topo + 12 FG = 2094 features
+│   │   ├── domain/
+│   │   │   └── applicability.py   #   5-method AD: Tanimoto, Mahalanobis, IF, PCA, Leverage
+│   │   ├── models/
+│   │   │   ├── base.py            #   Enhanced RF + XGBoost with uncertainty
+│   │   │   ├── ensemble.py        #   Domain-aware weighted ensemble
+│   │   │   ├── prodrug_detector.py#   11 SMARTS + ML prodrug classifier
+│   │   │   ├── metabolism.py      #   CYP450/P-gp/PPB + bioavailability (F=fa×fg×fh)
+│   │   │   └── router.py          #   MW/TPSA/FG routing to specialized models
+│   │   └── evaluation/
+│   │       └── stratified_validator.py  # MW/TPSA-binned validation, calibration, UQ
 │   ├── qspr/                       # 📦 QSPR Pipeline Package
 │   │   ├── __init__.py            #   Package init + public API
 │   │   ├── config.py              #   Central config (datasets, hyperparams)
@@ -824,7 +953,7 @@ Railway config (`railway.json`):
 | **Setup time** | 2 minutes | Days to weeks |
 | **Cost** | Free & open source | $10K–$100K/yr licenses |
 | **AI Assistant** | Context-aware copilot with function calling + voice | None |
-| **ML Engine** | QSPR v2.0 ensemble (RF + XGB, ECFP4) | Single model |
+| **ML Engine** | ADMET v4.0 (ECFP6, 2094 features, domain-aware) + QSPR v2.0 (ECFP4) | Single model |
 | **Network Pharmacology** | Full pipeline: ChEMBL → STRING → Reactome/KEGG → Open Targets with animated stepper | Manual multi-tool workflow |
 | **Target Prediction** | 3-tier real-data pipeline (ChEMBL API + Morgan FP + SMARTS) | Database lookup only |
 | **3D Visualization** | Three.js engine + 3Dmol.js (reactions, conformers, vibration) | Static images |
@@ -843,7 +972,11 @@ Railway config (`railway.json`):
 - [x] Animated pipeline stepper with per-step progress tracking
 - [x] Interactive force-directed PPI network graph
 - [x] PubChem / ChEMBL compound search integration
-- [ ] ADMET expansion (CYP inhibition, plasma protein binding, hERG)
+- [x] ADMET v4.0 domain-aware prediction (17 endpoints: CYP inhibition, PPB, hERG, Ames, DILI, Caco-2, clearance, half-life, VDss, oral bioavailability, P-gp)
+- [x] Applicability domain awareness (5-method composite: Tanimoto, Mahalanobis, IF, PCA, Leverage)
+- [x] Prodrug detection (phosphoramidate, ester, carbamate — 11 SMARTS + ML)
+- [x] Metabolism-aware bioavailability (CYP450 + P-gp + PPB → F = fa × fg × fh)
+- [x] MW/TPSA-stratified validation with calibration curves & uncertainty quantification
 - [ ] Retrosynthesis pathway suggestion
 - [ ] Molecular docking integration
 - [ ] Batch prediction (CSV of 1000+ SMILES)
@@ -867,6 +1000,9 @@ Railway config (`railway.json`):
 | `npm run ml:train:tune` | Train with Optuna Bayesian hyperparameter tuning |
 | `npm run ml:train:quick` | Quick training (reduced trials, for testing) |
 | `npm run ml:evaluate` | Evaluate models — scaffold-split metrics |
+| `python ml/train_admet.py` | Train ADMET v4.0 models (17 endpoints, domain-aware) |
+| `python ml/train_admet.py --tune` | ADMET training with Optuna tuning (80 trials) |
+| `python ml/train_admet.py --quick` | ADMET quick training (150 estimators) |
 | `npm run build` | Production build (Next.js) |
 | `npm run start` | Start production server |
 | `npm run lint` | Run ESLint |

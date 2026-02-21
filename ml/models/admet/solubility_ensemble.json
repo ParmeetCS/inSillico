@@ -1,0 +1,12 @@
+{
+  "endpoint": "solubility",
+  "task": "regression",
+  "weights": {
+    "random_forest": 0.5148461949469506,
+    "xgboost": 0.4851538050530494
+  },
+  "metrics": {
+    "r2": 0.6891,
+    "rmse": 0.9547
+  }
+}
