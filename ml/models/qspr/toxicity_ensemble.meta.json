@@ -1,29 +1,30 @@
 {
   "property": "toxicity",
   "type": "WeightedEnsemble",
-  "model_version": "2.0.0",
+  "model_version": "3.0.0",
   "weights": {
-    "random_forest": 0.4722815233110667,
-    "xgboost": 0.5277184766889332
+    "random_forest": 0.4871311989956058,
+    "xgboost": 0.5128688010043942
   },
   "metrics": {
     "accuracy": 0.9841,
-    "f1": 0.0,
-    "precision": 0.0,
-    "recall": 0.0,
-    "roc_auc": 0.7492,
+    "f1": 0.2857,
+    "precision": 0.5,
+    "recall": 0.2,
+    "roc_auc": 0.6828,
+    "optimal_threshold": 0.25,
     "confusion_matrix": [
       [
-        309,
-        0
+        308,
+        1
       ],
       [
-        5,
-        0
+        4,
+        1
       ]
     ],
-    "mean_uncertainty": 0.024015322468118577,
-    "mean_confidence": 0.9260298157580108
+    "mean_uncertainty": 0.01841716386491938,
+    "mean_confidence": 0.9469167752593696
   },
-  "saved_at": "2026-02-18 16:23:42 UTC"
+  "saved_at": "2026-02-19 16:15:00 UTC"
 }

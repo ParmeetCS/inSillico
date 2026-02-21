@@ -16,7 +16,7 @@ MODEL_DIR = os.path.join(BASE_DIR, "models", "qspr")
 LEGACY_MODEL_DIR = os.path.join(BASE_DIR, "models")
 
 # ─── Descriptor Configuration ───
-DESCRIPTOR_VERSION = "ecfp4_2048_v2"
+DESCRIPTOR_VERSION = "ecfp4_2048_v3"
 
 # Morgan Fingerprint parameters
 # Radius=2 → ECFP4 (Extended Connectivity FP, diameter 4)
@@ -33,10 +33,14 @@ MORGAN_RADIUS = 2
 MORGAN_NBITS = 2048
 
 # Additional RDKit physicochemical descriptors appended to fingerprints
+# v3: Expanded from 8 → 14 descriptors for better coverage of molecular
+# property space. Added: QED, MolarRefractivity, RingCount, HeavyAtomCount,
+# BertzCT (topological complexity), NumHeteroatoms.
 # These capture global molecular properties that fingerprints miss:
-# MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3
+# MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3,
+# QED, MolarRefractivity, RingCount, HeavyAtomCount, BertzCT, NumHeteroatoms
 USE_PHYSICOCHEMICAL_DESCRIPTORS = True
-NUM_PHYSCHEM_DESCRIPTORS = 8  # appended to fingerprint vector
+NUM_PHYSCHEM_DESCRIPTORS = 14  # appended to fingerprint vector
 
 # Total feature vector length
 TOTAL_FEATURES = MORGAN_NBITS + (NUM_PHYSCHEM_DESCRIPTORS if USE_PHYSICOCHEMICAL_DESCRIPTORS else 0)
@@ -89,23 +93,26 @@ PROPERTY_TASKS = {
 # ─── Model Configuration ───
 # Default hyperparameters (overridden by Optuna tuning)
 DEFAULT_RF_PARAMS = {
-    "n_estimators": 500,
+    "n_estimators": 800,
     "max_depth": None,  # Let trees grow fully
-    "min_samples_split": 5,
-    "min_samples_leaf": 2,
+    "min_samples_split": 3,
+    "min_samples_leaf": 1,
     "max_features": "sqrt",
+    "class_weight": "balanced",  # Handle class imbalance for classification
     "n_jobs": -1,
     "random_state": 42,
 }
 
 DEFAULT_XGB_PARAMS = {
-    "n_estimators": 300,
-    "max_depth": 6,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "reg_alpha": 0.1,
-    "reg_lambda": 1.0,
+    "n_estimators": 500,
+    "max_depth": 7,
+    "learning_rate": 0.03,
+    "subsample": 0.85,
+    "colsample_bytree": 0.75,
+    "min_child_weight": 3,
+    "gamma": 0.1,
+    "reg_alpha": 0.05,
+    "reg_lambda": 1.5,
     "random_state": 42,
     "verbosity": 0,
     "n_jobs": -1,
@@ -131,5 +138,5 @@ OPTUNA_TIMEOUT = 600  # seconds
 OPTUNA_SEED = 42
 
 # ─── Server Configuration ───
-FLASK_PORT = 5001
-MODEL_VERSION = "2.0.0"
+FLASK_PORT = int(os.environ.get("PORT", 5001))
+MODEL_VERSION = "3.0.0"

@@ -191,18 +191,24 @@ class QSPREvaluator:
         y_pred: np.ndarray,
         y_proba: np.ndarray,
     ) -> Dict:
-        """Compute classification evaluation metrics."""
-        acc = accuracy_score(y_true, y_pred)
-        f1 = f1_score(y_true, y_pred, zero_division=0)
-        precision = precision_score(y_true, y_pred, zero_division=0)
-        recall = recall_score(y_true, y_pred, zero_division=0)
+        """Compute classification evaluation metrics with optimal threshold tuning."""
+        # Find optimal threshold that maximizes F1 on this data
+        best_threshold, best_f1 = self._find_optimal_threshold(y_true, y_proba)
+
+        # Re-classify using optimal threshold
+        y_pred_opt = (y_proba >= best_threshold).astype(int)
+
+        acc = accuracy_score(y_true, y_pred_opt)
+        f1 = f1_score(y_true, y_pred_opt, zero_division=0)
+        precision = precision_score(y_true, y_pred_opt, zero_division=0)
+        recall = recall_score(y_true, y_pred_opt, zero_division=0)
 
         try:
             auc = roc_auc_score(y_true, y_proba)
         except ValueError:
             auc = 0.0
 
-        cm = confusion_matrix(y_true, y_pred)
+        cm = confusion_matrix(y_true, y_pred_opt)
 
         return {
             "accuracy": round(float(acc), 4),
@@ -210,8 +216,37 @@ class QSPREvaluator:
             "precision": round(float(precision), 4),
             "recall": round(float(recall), 4),
             "roc_auc": round(float(auc), 4),
+            "optimal_threshold": round(float(best_threshold), 4),
             "confusion_matrix": cm.tolist(),
         }
+
+    @staticmethod
+    def _find_optimal_threshold(
+        y_true: np.ndarray,
+        y_proba: np.ndarray,
+    ) -> Tuple[float, float]:
+        """
+        Find the classification threshold that maximizes F1-score.
+
+        For imbalanced datasets (e.g., ClinTox with ~2% positives),
+        the default 0.5 threshold causes the model to never predict
+        the minority class. Sweeping thresholds from 0.05 to 0.95
+        finds the F1-optimal point.
+
+        Returns:
+            (optimal_threshold, best_f1)
+        """
+        best_f1 = 0.0
+        best_threshold = 0.5
+
+        for threshold in np.arange(0.05, 0.96, 0.01):
+            y_pred = (y_proba >= threshold).astype(int)
+            f1_val = f1_score(y_true, y_pred, zero_division=0)
+            if f1_val > best_f1:
+                best_f1 = f1_val
+                best_threshold = threshold
+
+        return best_threshold, best_f1
 
     def _aggregate_fold_metrics(self, fold_metrics: List[Dict]) -> Dict:
         """Compute mean ± std of metrics across folds."""

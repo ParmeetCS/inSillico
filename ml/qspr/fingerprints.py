@@ -63,7 +63,7 @@ class MorganFingerprintCalculator:
         """Total feature vector dimensionality."""
         n = self.n_bits
         if self.use_physchem:
-            n += 8  # MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FrCSP3
+            n += 14  # 14 physicochemical descriptors (v3)
         return n
 
     @property
@@ -81,6 +81,12 @@ class MorganFingerprintCalculator:
                     "physchem_rotbonds",
                     "physchem_aromatic_rings",
                     "physchem_fraction_csp3",
+                    "physchem_qed",
+                    "physchem_molar_refractivity",
+                    "physchem_ring_count",
+                    "physchem_heavy_atom_count",
+                    "physchem_bertz_ct",
+                    "physchem_num_heteroatoms",
                 ])
             self._feature_names = names
         return self._feature_names
@@ -110,9 +116,9 @@ class MorganFingerprintCalculator:
 
     def compute_physchem(self, mol: Chem.Mol) -> np.ndarray:
         """
-        Compute 8 physicochemical descriptors.
+        Compute 14 physicochemical descriptors (v3 — expanded from 8).
 
-        Selected for pharmacokinetic relevance:
+        Selected for pharmacokinetic and QSPR relevance:
           - MW: Lipinski Ro5 criterion, absorption predictor
           - TPSA: Blood-brain barrier, intestinal absorption
           - LogP: Lipophilicity, membrane permeability
@@ -120,6 +126,12 @@ class MorganFingerprintCalculator:
           - RotBonds: Molecular flexibility, oral bioavailability
           - AromaticRings: Metabolic stability, binding
           - FractionCSP3: 3D complexity, target selectivity
+          - QED: Quantitative estimate of drug-likeness (multi-property)
+          - MolarRefractivity: Molecular polarizability, binding affinity
+          - RingCount: Total ring systems (aromatic + aliphatic)
+          - HeavyAtomCount: Molecular size proxy
+          - BertzCT: Topological complexity (graph-theoretic)
+          - NumHeteroatoms: Heteroatom fraction, solubility/reactivity
         """
         return np.array([
             Descriptors.MolWt(mol),
@@ -130,6 +142,12 @@ class MorganFingerprintCalculator:
             Descriptors.NumRotatableBonds(mol),
             Descriptors.NumAromaticRings(mol),
             Lipinski.FractionCSP3(mol),
+            Descriptors.qed(mol),
+            Crippen.MolMR(mol),
+            Descriptors.RingCount(mol),
+            mol.GetNumHeavyAtoms(),
+            Descriptors.BertzCT(mol),
+            Descriptors.NumHeteroatoms(mol),
         ], dtype=np.float32)
 
     def compute(self, smiles: str) -> np.ndarray:

@@ -1,17 +1,17 @@
 """
-cerebras_bridge.py — Cerebras AI LLM Bridge for Voice Pipeline
+cerebras_bridge.py — Gemini AI LLM Bridge for Voice Pipeline
 ================================================================
 
-Connects the PersonaPlex voice pipeline to Cerebras AI for
-reasoning and response generation.
+Connects the PersonaPlex voice pipeline to Gemini AI (Google Gemma 3n)
+via OpenRouter for reasoning and response generation.
 
 Flow:
   1. Receive transcript from ASR
   2. Inject user context + conversation history
-  3. Send to Cerebras AI with system prompt
+  3. Send to Gemini AI (OpenRouter) with system prompt
   4. Return response text for TTS synthesis
 
-Uses the Cerebras OpenAI-compatible API.
+Uses the OpenRouter OpenAI-compatible API with google/gemma-3n-e4b-it:free.
 """
 
 import os
@@ -22,13 +22,18 @@ from typing import Optional
 
 import requests
 
-logger = logging.getLogger("personaplex.cerebras")
+logger = logging.getLogger("personaplex.gemini")
 
 # ─── Configuration ───
 
-CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
-CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "")
-CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "llama3.1-8b")
+GEMINI_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "google/gemma-3n-e4b-it:free")
+
+# Backward compatibility aliases
+CEREBRAS_API_URL = GEMINI_API_URL
+CEREBRAS_API_KEY = GEMINI_API_KEY
+CEREBRAS_MODEL = GEMINI_MODEL
 
 # ─── System Prompt (voice-optimized) ───
 
@@ -182,7 +187,7 @@ VOICE_TOOLS = [
 
 class CerebrasBridge:
     """
-    Bridge between PersonaPlex voice pipeline and Cerebras AI.
+    Bridge between PersonaPlex voice pipeline and Gemini AI (via OpenRouter).
 
     Handles:
       - System prompt construction with user context
@@ -192,13 +197,15 @@ class CerebrasBridge:
     """
 
     def __init__(self):
-        self.api_url = CEREBRAS_API_URL
-        self.api_key = CEREBRAS_API_KEY
-        self.model = CEREBRAS_MODEL
+        self.api_url = GEMINI_API_URL
+        self.api_key = GEMINI_API_KEY
+        self.model = GEMINI_MODEL
         self._session = requests.Session()
         self._session.headers.update({
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
+            "HTTP-Referer": "https://insillico.app",
+            "X-Title": "InSilico Lab",
         })
 
     @property
@@ -213,7 +220,7 @@ class CerebrasBridge:
         temperature: float = 0.7,
     ) -> dict:
         """
-        Generate a response from Cerebras AI.
+        Generate a response from Gemini AI via OpenRouter.
 
         Args:
             messages: Conversation history [{role, content}, ...]
@@ -231,7 +238,7 @@ class CerebrasBridge:
         """
         if not self.is_configured:
             return {
-                "text": "The AI reasoning engine is not configured. Please set the Cerebras API key.",
+                "text": "The AI reasoning engine is not configured. Please set the GEMINI_API_KEY.",
                 "tool_calls": [],
                 "usage": {},
                 "latency_ms": 0,
@@ -273,7 +280,7 @@ class CerebrasBridge:
                 resp.raise_for_status()
                 data = resp.json()
             except requests.exceptions.RequestException as e:
-                logger.error(f"Cerebras API error: {e}")
+                logger.error(f"Gemini API error: {e}")
                 return {
                     "text": "I encountered an error connecting to the reasoning engine. Please try again.",
                     "tool_calls": all_tool_calls,
@@ -395,7 +402,7 @@ class CerebrasBridge:
         temperature: float = 0.7,
     ):
         """
-        Generate a streaming response from Cerebras AI.
+        Generate a streaming response from Gemini AI via OpenRouter.
 
         Yields text chunks as they arrive.
         Note: Streaming mode does not support tool calling.
@@ -444,7 +451,7 @@ class CerebrasBridge:
                     continue
 
         except Exception as e:
-            logger.error(f"Cerebras streaming error: {e}")
+            logger.error(f"Gemini streaming error: {e}")
             yield "I encountered an error generating the response."
 
 
@@ -454,6 +461,7 @@ _bridge: Optional[CerebrasBridge] = None
 
 
 def get_cerebras_bridge() -> CerebrasBridge:
+    """Get singleton CerebrasBridge (now uses Gemini AI via OpenRouter)."""
     global _bridge
     if _bridge is None:
         _bridge = CerebrasBridge()

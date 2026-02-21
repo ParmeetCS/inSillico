@@ -33,3 +33,7 @@ python-dotenv>=1.0     # Load .env.local for API keys
 requests>=2.31         # Cerebras AI HTTP client (Python bridge)
 edge-tts>=7.0          # Microsoft Edge Neural TTS (free, high-quality)
 # nvidia-riva-client    # NVIDIA Riva ASR/TTS (optional, install if Riva server available)
+
+# ── Network Pharmacology ──
+networkx>=3.2          # Graph construction and analysis
+scipy>=1.12            # Statistical tests (hypergeometric, FDR correction)

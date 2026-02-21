@@ -482,7 +482,7 @@ export default function CopilotPage() {
                                 gap: 8,
                             }}
                         >
-                            AI Drug Discovery Copilot
+                            R&D with AI
                             <span
                                 style={{
                                     fontSize: "0.65rem",

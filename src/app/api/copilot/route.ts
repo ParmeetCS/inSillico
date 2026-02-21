@@ -1,5 +1,5 @@
 /**
- * AI Drug Discovery Copilot — Cerebras AI + RAG + Function Calling
+ * AI — Gemini AI (Gemma 3n) + RAG + Function Calling
  * ==================================================================
  * 
  * POST /api/copilot
@@ -14,15 +14,15 @@
  * Architecture:
  *   1. Retrieve user context from Supabase (RAG)
  *   2. Build system prompt with persona + context
- *   3. Send to Cerebras AI with tool definitions
+ *   3. Send to Gemini AI via OpenRouter with tool definitions
  *   4. Handle tool calls (predictions, descriptors, drug-likeness)
  *   5. Return final response (streaming or non-streaming)
  * 
- * Engine: Cerebras AI (llama3.1-8b)
+ * Engine: Google Gemma 3n (google/gemma-3n-e4b-it:free) via OpenRouter
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCerebrasClient, type CerebrasMessage, type CerebrasStreamChunk } from "@/lib/cerebras-client";
+import { getGeminiClient, type GeminiMessage, type GeminiStreamChunk } from "@/lib/gemini-client";
 import { retrieveUserContext, formatContextForPrompt } from "@/lib/rag-context";
 import { TOOL_DEFINITIONS, executeToolCall } from "@/lib/tool-definitions";
 
@@ -104,7 +104,7 @@ const TEXT_MODE_ADDENDUM = `
 
 /* ─── Streaming Response Helpers ─── */
 
-function createSSEStream(cerebrasStream: AsyncGenerator<CerebrasStreamChunk>): ReadableStream {
+function createSSEStream(cerebrasStream: AsyncGenerator<GeminiStreamChunk>): ReadableStream {
     return new ReadableStream({
         async start(controller) {
             const encoder = new TextEncoder();
@@ -136,11 +136,11 @@ function createSSEStream(cerebrasStream: AsyncGenerator<CerebrasStreamChunk>): R
 
 export async function POST(req: NextRequest) {
     try {
-        const cerebras = getCerebrasClient();
+        const gemini = getGeminiClient();
 
-        if (!cerebras.isConfigured()) {
+        if (!gemini.isConfigured()) {
             return NextResponse.json(
-                { error: "Cerebras API key not configured. Add CEREBRAS_API_KEY to .env.local" },
+                { error: "Gemini API key not configured. Add GEMINI_API_KEY to .env.local" },
                 { status: 500 }
             );
         }
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
         ].join("");
 
         // ── Step 3: Build message array ──
-        const cerebrasMessages: CerebrasMessage[] = [
+        const geminiMessages: GeminiMessage[] = [
             { role: "system", content: systemPrompt },
             ...messages.map((m: { role: string; content: string }) => ({
                 role: m.role as "user" | "assistant",
@@ -191,8 +191,8 @@ export async function POST(req: NextRequest) {
 
         // ── Step 4: Streaming mode ──
         if (stream) {
-            const streamGen = cerebras.chatCompletionStream({
-                messages: cerebrasMessages,
+            const streamGen = gemini.chatCompletionStream({
+                messages: geminiMessages,
                 temperature: 0.7,
                 top_p: 0.9,
                 max_tokens: 2048,
@@ -208,9 +208,9 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Step 5: Non-streaming with tool calling ──
-        const { response, toolResults } = await cerebras.chatWithTools(
+        const { response, toolResults } = await gemini.chatWithTools(
             {
-                messages: cerebrasMessages,
+                messages: geminiMessages,
                 tools: TOOL_DEFINITIONS,
                 tool_choice: "auto",
                 temperature: 0.7,

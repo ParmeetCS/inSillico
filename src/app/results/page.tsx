@@ -9,7 +9,7 @@ import {
     Beaker, Shield, Droplets, FlaskConical, Activity,
     ChevronRight, Search, Download, GitCompareArrows, X, Check,
     BarChart3, Zap, Eye, Calendar, Sparkles, Share2, FileText,
-    Loader2, RefreshCw, Bot,
+    Loader2, RefreshCw, Bot, GitBranch,
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/lib/auth-context";
@@ -314,6 +314,18 @@ export default function ResultsIndexPage() {
         }
         if (user) fetchResults();
     }, [user, authLoading, router, fetchResults]);
+
+    /* ── Auto-generate AI suggestions for all loaded simulations ── */
+    useEffect(() => {
+        if (simulations.length === 0) return;
+        // Fetch AI suggestion for each simulation that doesn't have one yet (limit to first 5 to avoid rate-limits)
+        const pending = simulations.filter(s => !aiSummaries[s.dbId] && !loadingSummary[s.dbId]).slice(0, 5);
+        if (pending.length === 0) return;
+        for (const sim of pending) {
+            fetchAiSummary(sim);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [simulations]);
 
     const filteredSims = simulations.filter(sim => {
         const matchesSearch = sim.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -776,6 +788,15 @@ export default function ResultsIndexPage() {
                                                         >
                                                             <Download size={14} />
                                                         </Link>
+                                                        <Link
+                                                            href={`/network-pharmacology?smiles=${encodeURIComponent(sim.smiles)}&name=${encodeURIComponent(sim.name)}`}
+                                                            className="btn-secondary"
+                                                            onClick={() => haptic("light")}
+                                                            style={{ padding: "8px 12px", fontSize: "0.78rem", borderRadius: 10, display: "flex", alignItems: "center", gap: 4 }}
+                                                            title="Network Pharmacology"
+                                                        >
+                                                            <GitBranch size={14} />
+                                                        </Link>
                                                     </div>
                                                 );
                                             })()}
@@ -816,7 +837,7 @@ export default function ResultsIndexPage() {
                                                     <Loader2 size={14} style={{ color: "var(--accent-purple)" }} />
                                                 </motion.div>
                                                 <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                                                    Generating AI analysis...
+                                                    Generating AI suggestion...
                                                 </span>
                                             </div>
                                         ) : (
@@ -836,7 +857,7 @@ export default function ResultsIndexPage() {
                                                 }}
                                             >
                                                 <Sparkles size={13} />
-                                                Generate AI Insight
+                                                AI Suggestion
                                             </motion.button>
                                         )}
                                     </div>

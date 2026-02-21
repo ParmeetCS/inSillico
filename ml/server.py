@@ -35,7 +35,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# Load .env.local from project root so API keys (Cerebras, Riva, etc.)
+# Load .env.local from project root so API keys (Gemini, Riva, etc.)
 # are available to the Python process — Next.js only loads these for Node.
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_project_root, ".env.local"), override=False)
@@ -884,7 +884,7 @@ def voice_process():
     else:
         messages = [{"role": "user", "content": text}]
 
-    # Generate response via Cerebras
+    # Generate response via Gemini AI
     bridge = get_cerebras_bridge()
     result = bridge.generate_response(
         messages=messages,
@@ -1025,35 +1025,451 @@ def voice_status():
 
 
 # ═══════════════════════════════════════
-#  Main
+#  3D Molecular Geometry & Conformer Generation
 # ═══════════════════════════════════════
-if __name__ == "__main__":
+
+@app.route("/generate-3d", methods=["POST"])
+def generate_3d():
+    """
+    Generate 3D coordinates and conformers for a molecule given its SMILES.
+    Returns atom positions, bond information, and optional conformer frames
+    suitable for the Three.js molecular viewer.
+
+    Request JSON:
+      { "smiles": "CCO", "num_conformers": 5 }
+
+    Response JSON:
+      {
+        "atoms": [{ "id": 1, "element": "C", "x": 0, "y": 0, "z": 0 }, ...],
+        "bonds": [{ "atom1": 1, "atom2": 2, "order": 1 }, ...],
+        "conformers": [[{x,y,z}, ...], ...],
+        "name": "ethanol",
+        "smiles": "CCO"
+      }
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Descriptors
+    except ImportError:
+        return jsonify({"error": "RDKit not available on this server"}), 500
+
+    data = request.get_json(force=True)
+    smiles = data.get("smiles", "").strip()
+    num_conformers = min(int(data.get("num_conformers", 5)), 20)
+
+    if not smiles:
+        return jsonify({"error": "SMILES string required"}), 400
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return jsonify({"error": f"Invalid SMILES: {smiles}"}), 400
+
+    # Add hydrogens for proper 3D embedding
+    mol_h = Chem.AddHs(mol)
+
+    # Generate conformers
+    try:
+        conf_ids = AllChem.EmbedMultipleConfs(
+            mol_h,
+            numConfs=max(num_conformers, 1),
+            randomSeed=42,
+            maxAttempts=200,
+            pruneRmsThresh=0.5,
+            useExpTorsionAnglePrefs=True,
+            useBasicKnowledge=True,
+            enforceChirality=True,
+        )
+        if len(conf_ids) == 0:
+            # Fallback: try without pruning
+            conf_ids = AllChem.EmbedMultipleConfs(mol_h, numConfs=1, randomSeed=42)
+
+        # Optimize each conformer with MMFF94
+        for cid in conf_ids:
+            try:
+                AllChem.MMFFOptimizeMolecule(mol_h, confId=cid, maxIters=500)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Conformer generation failed for {smiles}: {e}")
+        # Try basic 2D → 3D fallback
+        AllChem.EmbedMolecule(mol_h, randomSeed=42)
+        conf_ids = [0]
+
+    if mol_h.GetNumConformers() == 0:
+        return jsonify({"error": "Could not generate 3D coordinates"}), 422
+
+    # Use first conformer for atom positions
+    conf0 = mol_h.GetConformer(0)
+
+    # Build atom list (1-indexed IDs)
+    atoms = []
+    for i in range(mol_h.GetNumAtoms()):
+        pos = conf0.GetAtomPosition(i)
+        atom = mol_h.GetAtomWithIdx(i)
+        atoms.append({
+            "id": i + 1,
+            "element": atom.GetSymbol(),
+            "x": round(pos.x, 4),
+            "y": round(pos.y, 4),
+            "z": round(pos.z, 4),
+            "charge": atom.GetFormalCharge(),
+        })
+
+    # Build bond list
+    bonds = []
+    for bond in mol_h.GetBonds():
+        bond_type = bond.GetBondType()
+        order = 1
+        if bond_type == Chem.rdchem.BondType.DOUBLE:
+            order = 2
+        elif bond_type == Chem.rdchem.BondType.TRIPLE:
+            order = 3
+        elif bond_type == Chem.rdchem.BondType.AROMATIC:
+            order = 1.5
+        bonds.append({
+            "atom1": bond.GetBeginAtomIdx() + 1,
+            "atom2": bond.GetEndAtomIdx() + 1,
+            "order": order,
+        })
+
+    # Build conformer frames
+    conformers = []
+    for cid in conf_ids:
+        conf = mol_h.GetConformer(cid)
+        frame = []
+        for i in range(mol_h.GetNumAtoms()):
+            pos = conf.GetAtomPosition(i)
+            frame.append({
+                "x": round(pos.x, 4),
+                "y": round(pos.y, 4),
+                "z": round(pos.z, 4),
+            })
+        conformers.append(frame)
+
+    # Try to get molecule name
+    name = smiles
+    try:
+        name = Chem.MolToSmiles(mol)  # canonical
+    except Exception:
+        pass
+
+    return jsonify({
+        "atoms": atoms,
+        "bonds": bonds,
+        "conformers": conformers if len(conformers) > 1 else [],
+        "smiles": smiles,
+        "name": name,
+        "num_atoms": len(atoms),
+        "num_bonds": len(bonds),
+        "num_conformers": len(conformers),
+        "molecular_weight": round(Descriptors.MolWt(mol), 2),
+    })
+
+
+@app.route("/generate-reaction-3d", methods=["POST"])
+def generate_reaction_3d():
+    """
+    Generate 3D geometries for reactants and products of a reaction.
+    Attempts atom mapping to enable smooth morphing animation.
+
+    Request JSON:
+      {
+        "reactant_smiles": "CCO",
+        "product_smiles": "CC=O",
+        "bond_changes": [
+          { "type": "break", "atom1": 3, "atom2": 6 },
+          { "type": "form", "atom1": 2, "atom2": 3 }
+        ]
+      }
+
+    Response JSON:
+      {
+        "before": { atoms, bonds, ... },
+        "after":  { atoms, bonds, ... },
+        "bondChanges": [...]
+      }
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Descriptors
+    except ImportError:
+        return jsonify({"error": "RDKit not available"}), 500
+
+    data = request.get_json(force=True)
+    reactant_smiles = data.get("reactant_smiles", "").strip()
+    product_smiles = data.get("product_smiles", "").strip()
+    bond_changes = data.get("bond_changes", [])
+
+    if not reactant_smiles or not product_smiles:
+        return jsonify({"error": "Both reactant_smiles and product_smiles required"}), 400
+
+    def smiles_to_3d(smi):
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            return None
+        mol_h = Chem.AddHs(mol)
+        AllChem.EmbedMolecule(mol_h, randomSeed=42, maxAttempts=200)
+        if mol_h.GetNumConformers() == 0:
+            return None
+        try:
+            AllChem.MMFFOptimizeMolecule(mol_h, maxIters=500)
+        except Exception:
+            pass
+        conf = mol_h.GetConformer(0)
+        atoms = []
+        for i in range(mol_h.GetNumAtoms()):
+            pos = conf.GetAtomPosition(i)
+            atom = mol_h.GetAtomWithIdx(i)
+            atoms.append({
+                "id": i + 1,
+                "element": atom.GetSymbol(),
+                "x": round(pos.x, 4),
+                "y": round(pos.y, 4),
+                "z": round(pos.z, 4),
+            })
+        bonds_list = []
+        for bond in mol_h.GetBonds():
+            bt = bond.GetBondType()
+            order = 1
+            if bt == Chem.rdchem.BondType.DOUBLE:
+                order = 2
+            elif bt == Chem.rdchem.BondType.TRIPLE:
+                order = 3
+            bonds_list.append({
+                "atom1": bond.GetBeginAtomIdx() + 1,
+                "atom2": bond.GetEndAtomIdx() + 1,
+                "order": order,
+            })
+        return {"atoms": atoms, "bonds": bonds_list, "smiles": smi}
+
+    before = smiles_to_3d(reactant_smiles)
+    after = smiles_to_3d(product_smiles)
+
+    if not before:
+        return jsonify({"error": f"Invalid reactant SMILES: {reactant_smiles}"}), 400
+    if not after:
+        return jsonify({"error": f"Invalid product SMILES: {product_smiles}"}), 400
+
+    # Pad atoms to equal length for morphing (shorter molecule gets virtual atoms at centroid)
+    max_atoms = max(len(before["atoms"]), len(after["atoms"]))
+    def pad_atoms(mol_data, target):
+        existing = mol_data["atoms"]
+        if len(existing) >= target:
+            return
+        cx = sum(a["x"] for a in existing) / len(existing) if existing else 0
+        cy = sum(a["y"] for a in existing) / len(existing) if existing else 0
+        cz = sum(a["z"] for a in existing) / len(existing) if existing else 0
+        for i in range(len(existing), target):
+            existing.append({
+                "id": i + 1,
+                "element": "H",
+                "x": round(cx, 4),
+                "y": round(cy, 4),
+                "z": round(cz, 4),
+            })
+
+    pad_atoms(before, max_atoms)
+    pad_atoms(after, max_atoms)
+
+    return jsonify({
+        "before": before,
+        "after": after,
+        "bondChanges": bond_changes,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Network Pharmacology Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+from network_pharmacology.target_prediction import predict_targets
+from network_pharmacology.ppi_network import build_ppi_network
+from network_pharmacology.pathway_enrichment import enrich_pathways
+from network_pharmacology.disease_mapping import map_diseases
+
+
+@app.route("/network/targets", methods=["POST"])
+def network_targets():
+    """Predict protein targets for a SMILES compound."""
+    data = request.get_json(force=True)
+    smiles = data.get("smiles", "")
+    top_k = data.get("top_k", 20)
+
+    if not smiles:
+        return jsonify({"error": "Missing 'smiles' parameter"}), 400
+
+    try:
+        result = predict_targets(smiles, top_k=top_k)
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Target prediction failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/ppi", methods=["POST"])
+def network_ppi():
+    """Build PPI network from a list of genes."""
+    data = request.get_json(force=True)
+    genes = data.get("genes", [])
+    min_score = data.get("min_score", 400)
+
+    if not genes:
+        return jsonify({"error": "Missing 'genes' parameter"}), 400
+
+    try:
+        result = build_ppi_network(genes, min_score=min_score)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"PPI network construction failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/pathways", methods=["POST"])
+def network_pathways():
+    """Perform pathway enrichment analysis for a gene list."""
+    data = request.get_json(force=True)
+    genes = data.get("genes", [])
+    p_threshold = data.get("p_threshold", 0.05)
+
+    if not genes:
+        return jsonify({"error": "Missing 'genes' parameter"}), 400
+
+    try:
+        result = enrich_pathways(genes, p_threshold=p_threshold)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Pathway enrichment failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/diseases", methods=["POST"])
+def network_diseases():
+    """Map genes to associated diseases."""
+    data = request.get_json(force=True)
+    genes = data.get("genes", [])
+    top_k = data.get("top_k", 25)
+
+    if not genes:
+        return jsonify({"error": "Missing 'genes' parameter"}), 400
+
+    try:
+        result = map_diseases(genes, top_k=top_k)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Disease mapping failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/network/full-analysis", methods=["POST"])
+def network_full_analysis():
+    """
+    Run the complete Network Pharmacology pipeline:
+      1. Predict targets from SMILES
+      2. Build PPI network from targets
+      3. Enrich pathways
+      4. Map diseases
+    Returns combined result in one response.
+    """
+    data = request.get_json(force=True)
+    smiles = data.get("smiles", "")
+
+    if not smiles:
+        return jsonify({"error": "Missing 'smiles' parameter"}), 400
+
+    try:
+        # Step 1: Target prediction
+        targets_result = predict_targets(smiles, top_k=data.get("top_k", 20))
+        if "error" in targets_result:
+            return jsonify({"error": targets_result["error"]}), 400
+
+        gene_list = targets_result.get("gene_list", [])
+
+        if not gene_list:
+            return jsonify({
+                "smiles": smiles,
+                "targets": targets_result,
+                "ppi_network": {"nodes": [], "edges": [], "metrics": {}},
+                "pathways": {"pathways": [], "pathway_count": 0},
+                "diseases": {"diseases": [], "disease_count": 0},
+                "summary": "No targets predicted for this compound.",
+            })
+
+        # Step 2: PPI network
+        ppi_result = build_ppi_network(gene_list, min_score=data.get("min_score", 400))
+
+        # Expand gene list with hub genes from PPI
+        hub_genes = ppi_result.get("metrics", {}).get("hub_genes", [])
+        expanded_genes = list(dict.fromkeys(gene_list + hub_genes))
+
+        # Step 3: Pathway enrichment
+        pathways_result = enrich_pathways(expanded_genes, p_threshold=data.get("p_threshold", 0.05))
+
+        # Step 4: Disease mapping
+        diseases_result = map_diseases(expanded_genes, top_k=data.get("disease_top_k", 25))
+
+        # Build summary
+        target_count = targets_result.get("target_count", 0)
+        pathway_count = pathways_result.get("pathway_count", 0)
+        disease_count = diseases_result.get("disease_count", 0)
+        top_areas = list(diseases_result.get("therapeutic_areas", {}).keys())[:3]
+
+        summary = (
+            f"Identified {target_count} potential protein targets, "
+            f"{ppi_result.get('gene_count', 0)} nodes in PPI network, "
+            f"{pathway_count} enriched pathways, and "
+            f"{disease_count} associated diseases."
+        )
+        if top_areas:
+            summary += f" Top therapeutic areas: {', '.join(top_areas)}."
+
+        return jsonify({
+            "smiles": smiles,
+            "targets": targets_result,
+            "ppi_network": ppi_result,
+            "pathways": pathways_result,
+            "diseases": diseases_result,
+            "summary": summary,
+        })
+
+    except Exception as e:
+        logger.error(f"Full network analysis failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ═══════════════════════════════════════
+#  Model Loading (runs for both gunicorn and direct execution)
+# ═══════════════════════════════════════
+def _initialize():
+    """Load models and initialize services. Called at module load time."""
+    global _server_ready
+    if _server_ready:
+        return
+
     logger.info("=" * 60)
     logger.info("  InSilico Lab — ML + Voice AI Server v2.2")
     logger.info("  Engine: QSPR v2.0 (ECFP4 + Ensemble)")
-    logger.info("  Voice:  PersonaPlex + Cerebras AI")
-    logger.info("  ASR:    NVIDIA Riva (or browser fallback)")
-    logger.info("  TTS:    Microsoft Edge Neural TTS")
+    logger.info("  Voice:  PersonaPlex + Gemini AI")
     logger.info("=" * 60)
 
     load_qspr_models()
 
     if not ensembles and not legacy_models:
-        logger.error(
-            "No models found! Run:\n"
+        logger.warning(
+            "No models found! Predictions will use fallback. Run:\n"
             "  python train_qspr.py      (QSPR v2)\n"
             "  python train_models.py    (Legacy v1)\n"
         )
-        sys.exit(1)
 
     # Initialize PersonaPlex
     try:
         sm = get_session_manager()
         bridge = get_cerebras_bridge()
         if bridge.is_configured:
-            logger.info("  ✓ Cerebras AI configured")
+            logger.info("  ✓ Gemini AI configured")
         else:
-            logger.warning("  ✗ Cerebras API key not set — voice reasoning disabled")
+            logger.warning("  ✗ Gemini API key not set — voice reasoning disabled")
 
         asr = get_asr_client()
         tts = get_tts_client()
@@ -1062,16 +1478,34 @@ if __name__ == "__main__":
     except Exception as e:
         logger.warning(f"  PersonaPlex init warning: {e}")
 
+    logger.info("Server initialized and ready.")
+
+
+# Initialize when module is imported (gunicorn --preload) or run directly
+_initialize()
+
+
+# ═══════════════════════════════════════
+#  Main (for local development: python server.py)
+# ═══════════════════════════════════════
+if __name__ == "__main__":
     logger.info(f"\nStarting server on http://localhost:{FLASK_PORT}")
     logger.info(f"Endpoints:")
-    logger.info(f"  POST /predict         — Predict all properties (QSPR ensemble)")
-    logger.info(f"  POST /descriptors     — Get molecular descriptors")
-    logger.info(f"  POST /drug-likeness   — Drug-likeness assessment")
-    logger.info(f"  GET  /models          — List capabilities")
-    logger.info(f"  GET  /health          — Health check")
-    logger.info(f"  POST /voice/session   — Create voice session")
-    logger.info(f"  POST /voice/process   — Process voice query")
-    logger.info(f"  POST /voice/tts       — Text-to-speech")
-    logger.info(f"  GET  /voice/status    — Voice subsystem status")
+    logger.info(f"  POST /predict              — Predict all properties (QSPR ensemble)")
+    logger.info(f"  POST /descriptors          — Get molecular descriptors")
+    logger.info(f"  POST /drug-likeness        — Drug-likeness assessment")
+    logger.info(f"  POST /generate-3d          — 3D coordinates & conformers")
+    logger.info(f"  POST /generate-reaction-3d — Reaction 3D geometries")
+    logger.info(f"  GET  /models               — List capabilities")
+    logger.info(f"  GET  /health               — Health check")
+    logger.info(f"  POST /voice/session        — Create voice session")
+    logger.info(f"  POST /voice/process        — Process voice query")
+    logger.info(f"  POST /voice/tts            — Text-to-speech")
+    logger.info(f"  GET  /voice/status         — Voice subsystem status")
+    logger.info(f"  POST /network/targets      — Predict protein targets")
+    logger.info(f"  POST /network/ppi          — Build PPI network")
+    logger.info(f"  POST /network/pathways     — Pathway enrichment")
+    logger.info(f"  POST /network/diseases     — Disease mapping")
+    logger.info(f"  POST /network/full-analysis— Full network pharmacology")
 
     app.run(host="0.0.0.0", port=FLASK_PORT, debug=False)

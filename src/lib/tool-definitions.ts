@@ -127,6 +127,24 @@ export const TOOL_DEFINITIONS: CerebrasToolDefinition[] = [
             },
         },
     },
+    {
+        type: "function",
+        function: {
+            name: "network_pharmacology",
+            description:
+                "Run a full network pharmacology analysis for a compound: predict protein targets, build protein-protein interaction (PPI) network, identify enriched pathways (KEGG/Reactome/GO), and map associated diseases. Use when the user asks about mechanism of action, drug targets, pathway analysis, polypharmacology, disease associations, or network pharmacology for a molecule.",
+            parameters: {
+                type: "object",
+                properties: {
+                    smiles: {
+                        type: "string",
+                        description: "SMILES notation of the compound to analyze.",
+                    },
+                },
+                required: ["smiles"],
+            },
+        },
+    },
 ];
 
 /* ─── Tool Execution Handlers ─── */
@@ -247,6 +265,35 @@ async function executeQueryQSPRDataset(args: Record<string, unknown>): Promise<s
     return JSON.stringify(result);
 }
 
+async function executeNetworkPharmacology(args: Record<string, unknown>): Promise<string> {
+    const smiles = args.smiles as string;
+    if (!smiles) throw new Error("SMILES string is required for network pharmacology analysis");
+
+    const result = await callMLBackend("/network/full-analysis", { smiles });
+
+    // Summarize for the AI (full result may be very large)
+    const targets = (result.targets as Record<string, unknown>)?.targets as Array<Record<string, unknown>> || [];
+    const pathways = (result.pathways as Record<string, unknown>)?.pathways as Array<Record<string, unknown>> || [];
+    const diseases = (result.diseases as Record<string, unknown>)?.diseases as Array<Record<string, unknown>> || [];
+
+    return JSON.stringify({
+        summary: result.summary,
+        target_count: targets.length,
+        top_targets: targets.slice(0, 5).map((t) => ({
+            gene: t.gene_name, name: t.target_name, probability: t.probability, class: t.target_class,
+        })),
+        pathway_count: pathways.length,
+        top_pathways: pathways.slice(0, 5).map((p) => ({
+            name: p.pathway_name, source: p.source, p_value: p.p_value, genes: p.genes,
+        })),
+        disease_count: diseases.length,
+        top_diseases: diseases.slice(0, 5).map((d) => ({
+            name: d.disease_name, score: d.score, area: d.therapeutic_area, genes: d.associated_genes,
+        })),
+        hub_genes: ((result.ppi_network as Record<string, unknown>)?.metrics as Record<string, unknown>)?.hub_genes || [],
+    });
+}
+
 /* ─── Tool Router ─── */
 
 /**
@@ -272,6 +319,9 @@ export async function executeToolCall(
 
         case "query_qspr_dataset":
             return executeQueryQSPRDataset(args);
+
+        case "network_pharmacology":
+            return executeNetworkPharmacology(args);
 
         default:
             return JSON.stringify({ error: `Unknown tool: ${toolName}` });
