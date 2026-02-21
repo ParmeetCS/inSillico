@@ -7,7 +7,7 @@ import {
     Play, Atom, Thermometer, Gauge, Beaker, Zap, CheckCircle2,
     ChevronRight, Loader2, Copy, Pencil, FlaskConical,
     Activity, Shield, Droplets, AlertTriangle, BarChart3,
-    Clock, Cpu, TrendingUp
+    Clock, Cpu, TrendingUp, Sparkles
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/lib/auth-context";
@@ -145,6 +145,8 @@ function SimulationSetupInner() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [moleculeFeatures, setMoleculeFeatures] = useState<any>(null);
     const [revealedFeatureCount, setRevealedFeatureCount] = useState(0);
+    const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+    const [loadingAiSuggestion, setLoadingAiSuggestion] = useState(false);
 
     const selectedCount = Object.values(properties).filter(Boolean).length;
     const selectedProps = Object.entries(properties).filter(([, v]) => v).map(([k]) => k);
@@ -356,6 +358,34 @@ function SimulationSetupInner() {
         }, 1200);
         return () => clearInterval(interval);
     }, [phase, moleculeFeatures]);
+
+    /* ── Auto-generate AI suggestion when results are ready ── */
+    useEffect(() => {
+        if (phase !== "results" || !molecule || !simulationResults || aiSuggestion || loadingAiSuggestion) return;
+        const tox = simulationResults.toxicity || {};
+        setLoadingAiSuggestion(true);
+        fetch("/api/copilot/summary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name: molecule.name,
+                smiles: molecule.smiles,
+                properties: simulationResults,
+                toxicity: {
+                    herg: tox.herg_inhibition?.probability != null ? Math.round(tox.herg_inhibition.probability * 100) : 0,
+                    ames: tox.ames_mutagenicity?.probability != null ? Math.round(tox.ames_mutagenicity.probability * 100) : 0,
+                    hepato: tox.hepatotoxicity?.probability != null ? Math.round(tox.hepatotoxicity.probability * 100) : 0,
+                },
+            }),
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.summary) setAiSuggestion(data.summary);
+                else setAiSuggestion("Unable to generate AI suggestion.");
+            })
+            .catch(() => setAiSuggestion("AI suggestion service unavailable."))
+            .finally(() => setLoadingAiSuggestion(false));
+    }, [phase, molecule, simulationResults, aiSuggestion, loadingAiSuggestion]);
 
     const displayResults = simulationResults ? buildDisplayResults(simulationResults) : {};
 
@@ -808,6 +838,32 @@ function SimulationSetupInner() {
                             );
                         })}
 
+                        {/* AI Suggestion — auto-generated */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.5 }}
+                        >
+                            <GlassCard padding="14px" glow="cyan">
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                    <Sparkles size={14} style={{ color: "var(--accent-cyan)" }} />
+                                    <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--accent-cyan)" }}>AI Suggestion</span>
+                                </div>
+                                {loadingAiSuggestion ? (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                                            <Loader2 size={13} style={{ color: "var(--accent-purple)" }} />
+                                        </motion.div>
+                                        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Generating AI suggestion...</span>
+                                    </div>
+                                ) : (
+                                    <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
+                                        {aiSuggestion || "Awaiting analysis..."}
+                                    </p>
+                                )}
+                            </GlassCard>
+                        </motion.div>
+
                         {/* Simulation meta */}
                         <GlassCard padding="14px" glow="purple">
                             <div style={{ fontSize: "0.78rem", fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
@@ -843,7 +899,7 @@ function SimulationSetupInner() {
                             className="btn-secondary"
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.97 }}
-                            onClick={() => { setPhase("setup"); setProgress(0); }}
+                            onClick={() => { setPhase("setup"); setProgress(0); setAiSuggestion(null); }}
                             style={{ width: "100%", justifyContent: "center", padding: "12px 24px" }}
                         >
                             ← Back to Setup
