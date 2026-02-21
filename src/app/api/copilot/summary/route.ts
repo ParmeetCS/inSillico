@@ -1,5 +1,5 @@
 /**
- * AI Summary — Gemini AI Compound Analysis
+ * AI Summary — Groq AI Compound Analysis
  * =============================================
  * 
  * POST /api/copilot/summary
@@ -7,11 +7,11 @@
  * Returns: { summary: string }
  * 
  * Generates a concise 1-2 sentence AI suggestion for a compound card.
- * Engine: Google Gemma 3n (google/gemma-3n-e4b-it:free) via OpenRouter
+ * Engine: openai/gpt-oss-120b via Groq
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getGeminiClient } from "@/lib/gemini-client";
+import { getGroqClient } from "@/lib/groq-client";
 
 const SYSTEM_PROMPT = `You are InSilico Lab's AI analyst. Given a molecule's predicted properties, produce a SHORT 1-2 sentence AI suggestion covering the single most important insight and one actionable recommendation.
 
@@ -27,11 +27,11 @@ Rules:
 
 export async function POST(req: NextRequest) {
     try {
-        const gemini = getGeminiClient();
+        const groq = getGroqClient();
 
-        if (!gemini.isConfigured()) {
+        if (!groq.isConfigured()) {
             return NextResponse.json(
-                { error: "Gemini API key not configured" },
+                { error: "Groq API key not configured" },
                 { status: 500 }
             );
         }
@@ -53,21 +53,32 @@ Toxicity Screening: hERG=${toxicity?.herg || 0}%, Ames=${toxicity?.ames || 0}%, 
 
 Give a 1-2 sentence AI suggestion.`;
 
-        const response = await gemini.chatCompletion({
+        const summaryOpts = {
             messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: prompt },
+                { role: "system" as const, content: SYSTEM_PROMPT },
+                { role: "user" as const, content: prompt },
             ],
             temperature: 0.5,
             top_p: 0.85,
-            max_tokens: 200,
-        });
+            max_tokens: 2048,
+        };
 
-        const summary = response.choices[0]?.message?.content;
+        let summary: string | undefined;
+
+        // Reasoning models sometimes return empty content — retry up to 2 times
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const response = await groq.chatCompletion(
+                { ...summaryOpts, max_tokens: 2048 + attempt * 2048 }
+            );
+            summary = response.choices[0]?.message?.content;
+
+            if (summary) break;
+            console.warn(`[Summary] Empty content (attempt ${attempt + 1}), retrying...`);
+        }
 
         if (!summary) {
             return NextResponse.json(
-                { error: "Empty response from AI" },
+                { error: "Empty response from AI. Please try again." },
                 { status: 502 }
             );
         }

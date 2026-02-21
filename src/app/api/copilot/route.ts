@@ -1,5 +1,5 @@
 /**
- * AI — Gemini AI (Gemma 3n) + RAG + Function Calling
+ * AI — Groq AI + RAG + Function Calling
  * ==================================================================
  * 
  * POST /api/copilot
@@ -14,15 +14,15 @@
  * Architecture:
  *   1. Retrieve user context from Supabase (RAG)
  *   2. Build system prompt with persona + context
- *   3. Send to Gemini AI via OpenRouter with tool definitions
+ *   3. Send to Groq AI with tool definitions
  *   4. Handle tool calls (predictions, descriptors, drug-likeness)
  *   5. Return final response (streaming or non-streaming)
  * 
- * Engine: Google Gemma 3n (google/gemma-3n-e4b-it:free) via OpenRouter
+ * Engine: openai/gpt-oss-120b via Groq
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getGeminiClient, type GeminiMessage, type GeminiStreamChunk } from "@/lib/gemini-client";
+import { getGroqClient, type GroqMessage, type GroqStreamChunk } from "@/lib/groq-client";
 import { retrieveUserContext, formatContextForPrompt } from "@/lib/rag-context";
 import { TOOL_DEFINITIONS, executeToolCall } from "@/lib/tool-definitions";
 
@@ -104,7 +104,7 @@ const TEXT_MODE_ADDENDUM = `
 
 /* ─── Streaming Response Helpers ─── */
 
-function createSSEStream(cerebrasStream: AsyncGenerator<GeminiStreamChunk>): ReadableStream {
+function createSSEStream(cerebrasStream: AsyncGenerator<GroqStreamChunk>): ReadableStream {
     return new ReadableStream({
         async start(controller) {
             const encoder = new TextEncoder();
@@ -136,11 +136,11 @@ function createSSEStream(cerebrasStream: AsyncGenerator<GeminiStreamChunk>): Rea
 
 export async function POST(req: NextRequest) {
     try {
-        const gemini = getGeminiClient();
+        const groq = getGroqClient();
 
-        if (!gemini.isConfigured()) {
+        if (!groq.isConfigured()) {
             return NextResponse.json(
-                { error: "Gemini API key not configured. Add GEMINI_API_KEY to .env.local" },
+                { error: "Groq API key not configured. Add GROQ_API_KEY to .env.local" },
                 { status: 500 }
             );
         }
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
         ].join("");
 
         // ── Step 3: Build message array ──
-        const geminiMessages: GeminiMessage[] = [
+        const groqMessages: GroqMessage[] = [
             { role: "system", content: systemPrompt },
             ...messages.map((m: { role: string; content: string }) => ({
                 role: m.role as "user" | "assistant",
@@ -191,11 +191,11 @@ export async function POST(req: NextRequest) {
 
         // ── Step 4: Streaming mode ──
         if (stream) {
-            const streamGen = gemini.chatCompletionStream({
-                messages: geminiMessages,
+            const streamGen = groq.chatCompletionStream({
+                messages: groqMessages,
                 temperature: 0.7,
                 top_p: 0.9,
-                max_tokens: 2048,
+                max_tokens: 8192,
             });
 
             return new Response(createSSEStream(streamGen), {
@@ -208,23 +208,36 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Step 5: Non-streaming with tool calling ──
-        const { response, toolResults } = await gemini.chatWithTools(
-            {
-                messages: geminiMessages,
-                tools: TOOL_DEFINITIONS,
-                tool_choice: "auto",
-                temperature: 0.7,
-                top_p: 0.9,
-                max_tokens: 2048,
-            },
-            executeToolCall
-        );
+        const chatWithToolsOpts = {
+            messages: groqMessages,
+            tools: TOOL_DEFINITIONS,
+            tool_choice: "auto" as const,
+            temperature: 0.7,
+            top_p: 0.9,
+            max_tokens: 8192,
+        };
 
-        const reply = response.choices[0]?.message?.content;
+        let reply: string | undefined;
+        let response;
+        let toolResults: Array<{ name: string; result: string }> = [];
+
+        // Reasoning models sometimes return empty content — retry up to 2 times
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const result = await groq.chatWithTools(
+                { ...chatWithToolsOpts, max_tokens: 8192 + attempt * 4096 },
+                executeToolCall
+            );
+            response = result.response;
+            toolResults = result.toolResults;
+            reply = response.choices[0]?.message?.content;
+
+            if (reply) break;
+            console.warn(`[Copilot] Empty content (attempt ${attempt + 1}, finish_reason=${response.choices[0]?.finish_reason}), retrying...`);
+        }
 
         if (!reply) {
             return NextResponse.json(
-                { error: "Empty response from AI" },
+                { error: "Empty response from AI. Please try again." },
                 { status: 502 }
             );
         }
