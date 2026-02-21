@@ -7,7 +7,7 @@
  * Returns: { summary: string }
  * 
  * Generates a concise 1-2 sentence AI suggestion for a compound card.
- * Engine: openai/gpt-oss-120b via Groq
+ * Engine: llama-3.3-70b-versatile via Groq
  */
 
 import { NextRequest, NextResponse } from "next/server";

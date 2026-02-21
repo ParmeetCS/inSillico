@@ -5,7 +5,7 @@
  * OpenAI-compatible API client for Groq.
  * Supports streaming, function calling, and structured output.
  * 
- * Model: openai/gpt-oss-120b
+ * Model: llama-3.3-70b-versatile
  * API: https://api.groq.com/openai/v1/chat/completions
  */
 
@@ -100,7 +100,7 @@ export interface GroqStreamChunk {
 /* ─── Constants ─── */
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_MODEL = "openai/gpt-oss-120b";
+const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 

@@ -18,7 +18,7 @@
  *   4. Handle tool calls (predictions, descriptors, drug-likeness)
  *   5. Return final response (streaming or non-streaming)
  * 
- * Engine: openai/gpt-oss-120b via Groq
+ * Engine: llama-3.3-70b-versatile via Groq
  */
 
 import { NextRequest, NextResponse } from "next/server";
