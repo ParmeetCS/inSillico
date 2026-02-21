@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import ReactionViewer, { parseSMILESToMolecule } from "@/components/reaction-viewer";
+import { toast } from "@/components/ui/toast";
+import { haptic } from "@/lib/haptics";
 
 export default function ReactionLabPage() {
     const [activeTab, setActiveTab] = useState<"kinetics" | "thermodynamics" | "yield" | "ai">("kinetics");
@@ -36,7 +39,9 @@ export default function ReactionLabPage() {
     const [liveMode, setLiveMode] = useState(false);
     const [showMechanism, setShowMechanism] = useState(false);
     const [showTransition, setShowTransition] = useState(false);
-    const [visualizationMode, setVisualizationMode] = useState("ball-stick");
+    const [visualizationMode, setVisualizationMode] = useState<"ball-stick" | "space-filling" | "pathway">("ball-stick");
+    const [simulationGenerated, setSimulationGenerated] = useState(false);
+    const [reactionProgress, setReactionProgress] = useState(0);
 
     const [reactants, setReactants] = useState([
         { name: "Hydrogen", smiles: "[H][H]", concentration: 2, amount: 0.5 },
@@ -53,6 +58,40 @@ export default function ReactionLabPage() {
         { name: "Polymerization", equation: "nC2H4 → (C2H4)n" },
         { name: "Combustion", equation: "CH4 + 2O2 → CO2 + 2H2O" },
     ];
+
+    // Handler functions
+    const handleGenerateSimulation = () => {
+        if (!reactionEquation.trim()) {
+            haptic("warning");
+            toast("Please enter a reaction equation", "warning");
+            return;
+        }
+
+        haptic("success");
+        setSimulationGenerated(true);
+        setReactionProgress(0);
+        setIsPlaying(false);
+        toast("Simulation generated successfully!", "success");
+    };
+
+    const handleReset = () => {
+        setIsPlaying(false);
+        setReactionProgress(0);
+        haptic("light");
+    };
+
+    const handleProgressUpdate = (progress: number) => {
+        setReactionProgress(progress);
+    };
+
+    const handlePlayPause = () => {
+        setIsPlaying(!isPlaying);
+        haptic("selection");
+    };
+
+    // Parse molecules for 3D viewer
+    const reactantMolecules = reactants.map((r) => parseSMILESToMolecule(r.smiles, r.name));
+    const productMolecules = products.map((p) => parseSMILESToMolecule(p.smiles, p.name));
 
     return (
         <div className="page-container">
@@ -261,27 +300,37 @@ export default function ReactionLabPage() {
                                 borderRadius: 12,
                                 background: "linear-gradient(135deg, rgba(59,130,246,0.05), rgba(139,92,246,0.05))",
                                 border: "1px solid var(--glass-border)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
                                 marginBottom: 16,
                                 position: "relative",
                                 overflow: "hidden",
                             }}
                         >
-                            {/* Placeholder for 3D Viewer */}
-                            <div style={{ textAlign: "center" }}>
-                                <FlaskConical size={64} style={{ color: "var(--accent-blue)", opacity: 0.3, marginBottom: 12 }} />
-                                <div style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
-                                    3D Molecular Animation Viewer
+                            {simulationGenerated ? (
+                                <ReactionViewer
+                                    reactants={reactantMolecules}
+                                    products={productMolecules}
+                                    isPlaying={isPlaying}
+                                    animationSpeed={animationSpeed}
+                                    visualizationMode={visualizationMode}
+                                    showTransition={showTransition}
+                                    onProgressUpdate={handleProgressUpdate}
+                                />
+                            ) : (
+                                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+                                    <div>
+                                        <FlaskConical size={64} style={{ color: "var(--accent-blue)", opacity: 0.3, marginBottom: 12 }} />
+                                        <div style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                                            3D Molecular Animation Viewer
+                                        </div>
+                                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>
+                                            Click "Generate Simulation" to start
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>
-                                    Click "Generate Simulation" to start
-                                </div>
-                            </div>
+                            )}
 
                             {/* Live Badge */}
-                            {liveMode && (
+                            {liveMode && simulationGenerated && (
                                 <div style={{ position: "absolute", top: 12, right: 12 }}>
                                     <StatusBadge status="processing" label="Live Mode" />
                                 </div>
@@ -292,18 +341,28 @@ export default function ReactionLabPage() {
                         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
                             <motion.button
                                 whileTap={{ scale: 0.95 }}
-                                onClick={() => setIsPlaying(!isPlaying)}
+                                onClick={handlePlayPause}
                                 className="btn-secondary"
                                 style={{ flex: 1 }}
+                                disabled={!simulationGenerated}
                             >
                                 {isPlaying ? <Pause size={16} /> : <Play size={16} />}
                                 {isPlaying ? "Pause" : "Play"}
                             </motion.button>
-                            <motion.button whileTap={{ scale: 0.95 }} className="btn-secondary">
+                            <motion.button 
+                                whileTap={{ scale: 0.95 }} 
+                                onClick={handleReset}
+                                className="btn-secondary"
+                                disabled={!simulationGenerated}
+                            >
                                 <RotateCcw size={16} />
                                 Reset
                             </motion.button>
-                            <motion.button whileTap={{ scale: 0.95 }} className="btn-secondary">
+                            <motion.button 
+                                whileTap={{ scale: 0.95 }} 
+                                className="btn-secondary"
+                                disabled={!simulationGenerated}
+                            >
                                 <Download size={16} />
                                 Export
                             </motion.button>
@@ -407,7 +466,9 @@ export default function ReactionLabPage() {
                         <div style={{ marginTop: 16 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                                 <label className="label">Reaction Progress</label>
-                                <span style={{ fontSize: "0.8rem", color: "var(--accent-cyan)" }}>0%</span>
+                                <span style={{ fontSize: "0.8rem", color: "var(--accent-cyan)" }}>
+                                    {Math.round(reactionProgress)}%
+                                </span>
                             </div>
                             <div
                                 style={{
@@ -420,7 +481,7 @@ export default function ReactionLabPage() {
                                 <div
                                     style={{
                                         height: "100%",
-                                        width: "0%",
+                                        width: `${reactionProgress}%`,
                                         background: "var(--gradient-accent)",
                                         transition: "width 0.3s ease",
                                     }}
@@ -584,11 +645,21 @@ export default function ReactionLabPage() {
 
                         {/* Action Buttons */}
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <motion.button whileTap={{ scale: 0.97 }} className="btn-primary" style={{ width: "100%" }}>
+                            <motion.button 
+                                whileTap={{ scale: 0.97 }} 
+                                onClick={handleGenerateSimulation}
+                                className="btn-primary" 
+                                style={{ width: "100%" }}
+                            >
                                 <Zap size={16} />
                                 Generate Simulation
                             </motion.button>
-                            <motion.button whileTap={{ scale: 0.97 }} className="btn-secondary" style={{ width: "100%" }}>
+                            <motion.button 
+                                whileTap={{ scale: 0.97 }} 
+                                onClick={handleReset}
+                                className="btn-secondary" 
+                                style={{ width: "100%" }}
+                            >
                                 <RotateCcw size={16} />
                                 Reset Conditions
                             </motion.button>
