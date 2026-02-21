@@ -32,10 +32,14 @@ import {
     Database,
     Shield,
     Microscope,
+    Download,
+    Sparkles,
+    FileText,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
+import { generateNetworkPharmacologyPDF } from "@/lib/generate-network-pharmacology-pdf";
 
 /* Dynamic: NetworkGraph uses SVG + ResizeObserver */
 const NetworkGraph = dynamic(() => import("@/components/network-graph"), {
@@ -236,6 +240,11 @@ function NetworkPharmacologyInner() {
     const [customSmiles, setCustomSmiles] = useState("");
     const [showCustomInput, setShowCustomInput] = useState(false);
 
+    // AI Suggestion
+    const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+    const [loadingAiSuggestion, setLoadingAiSuggestion] = useState(false);
+    const [downloadingPdf, setDownloadingPdf] = useState(false);
+
     // Pipeline stepper state
     const [pipelineStep, setPipelineStep] = useState(-1); // -1 = not started, 0-3 = current step
     const [stepStatuses, setStepStatuses] = useState<StepStatus[]>(["waiting", "waiting", "waiting", "waiting"]);
@@ -380,6 +389,7 @@ function NetworkPharmacologyInner() {
             await new Promise(resolve => setTimeout(resolve, 800));
 
             setResult(fullResult); setActiveTab("targets"); haptic("success");
+            setAiSuggestion(null); // reset AI suggestion for new results
         } catch (e: unknown) {
             // Mark current step as error
             setStepStatuses(prev => {
@@ -397,8 +407,66 @@ function NetworkPharmacologyInner() {
 
     const handleMoleculeSelect = useCallback((smiles: string, name: string) => {
         setSelectedSmiles(smiles); setSelectedName(name); setResult(null); setError(null);
+        setAiSuggestion(null);
         runAnalysis(smiles);
     }, [runAnalysis]);
+
+    /* ── Auto-generate AI suggestion when results are ready ── */
+    useEffect(() => {
+        if (!result || aiSuggestion || loadingAiSuggestion) return;
+        setLoadingAiSuggestion(true);
+        fetch("/api/copilot/summary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name: selectedName || "Compound",
+                smiles: result.smiles,
+                properties: {
+                    targets: result.targets.target_count,
+                    ppi_nodes: result.ppi_network.nodes.length,
+                    ppi_edges: result.ppi_network.edges.length,
+                    pathways: result.pathways.pathway_count,
+                    diseases: result.diseases.disease_count,
+                    top_pathways: result.pathways.top_pathways?.slice(0, 5) || [],
+                    therapeutic_areas: result.diseases.therapeutic_areas,
+                    hub_genes: (result.ppi_network.metrics.hub_genes as string[])?.slice(0, 5) || [],
+                    top_targets: result.targets.targets.slice(0, 5).map(t => `${t.gene_name} (${(t.probability * 100).toFixed(0)}%)`),
+                },
+                toxicity: {},
+            }),
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.summary) setAiSuggestion(data.summary);
+                else setAiSuggestion("Unable to generate AI suggestion for this analysis.");
+            })
+            .catch(() => setAiSuggestion("AI suggestion service unavailable."))
+            .finally(() => setLoadingAiSuggestion(false));
+    }, [result, aiSuggestion, loadingAiSuggestion, selectedName]);
+
+    /* ── Download PDF ── */
+    const handleDownloadPDF = useCallback(() => {
+        if (!result) return;
+        setDownloadingPdf(true);
+        try {
+            generateNetworkPharmacologyPDF({
+                compoundName: selectedName || "Unknown Compound",
+                smiles: result.smiles,
+                date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+                targets: result.targets,
+                ppi_network: result.ppi_network,
+                pathways: result.pathways,
+                diseases: result.diseases,
+                summary: result.summary,
+                aiSuggestion,
+            });
+            haptic("success");
+        } catch (e) {
+            console.error("PDF generation failed:", e);
+        } finally {
+            setDownloadingPdf(false);
+        }
+    }, [result, selectedName, aiSuggestion]);
 
     /* ── Filtering ── */
     const q = searchQuery.toLowerCase();
@@ -907,9 +975,22 @@ function NetworkPharmacologyInner() {
                                     <p style={{ fontFamily: "monospace", fontSize: "0.72rem", color: "var(--text-muted)", maxWidth: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{result.smiles}</p>
                                 </div>
                             </div>
-                            <button className="btn-secondary" onClick={() => runAnalysis(result.smiles)} style={{ padding: "8px 14px", fontSize: "0.82rem", borderRadius: 10 }}>
-                                <RefreshCw size={14} /> Re-run
-                            </button>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <motion.button
+                                    className="btn-primary"
+                                    whileHover={{ scale: 1.03 }}
+                                    whileTap={{ scale: 0.97 }}
+                                    onClick={handleDownloadPDF}
+                                    disabled={downloadingPdf}
+                                    style={{ padding: "8px 16px", fontSize: "0.82rem", borderRadius: 10, background: "linear-gradient(135deg, #3b82f6, #06b6d4)", display: "flex", alignItems: "center", gap: 6 }}
+                                >
+                                    {downloadingPdf ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+                                    {downloadingPdf ? "Generating…" : "Download PDF"}
+                                </motion.button>
+                                <button className="btn-secondary" onClick={() => runAnalysis(result.smiles)} style={{ padding: "8px 14px", fontSize: "0.82rem", borderRadius: 10 }}>
+                                    <RefreshCw size={14} /> Re-run
+                                </button>
+                            </div>
                         </div>
 
                         {/* Summary Cards */}
@@ -938,12 +1019,63 @@ function NetworkPharmacologyInner() {
                         </div>
 
                         {/* Summary text */}
-                        <div className="glass" style={{ padding: "14px 20px", marginBottom: 20 }}>
+                        <div className="glass" style={{ padding: "14px 20px", marginBottom: 14 }}>
                             <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                                 <Info size={17} style={{ color: "var(--accent-cyan)", flexShrink: 0, marginTop: 2 }} />
                                 <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>{result.summary}</p>
                             </div>
                         </div>
+
+                        {/* AI Suggestion — auto-generated */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3 }}
+                            style={{ marginBottom: 20 }}
+                        >
+                            <div className="glass" style={{ padding: "16px 20px", borderColor: loadingAiSuggestion ? "rgba(6,182,212,0.2)" : aiSuggestion ? "rgba(6,182,212,0.25)" : "transparent", transition: "border-color 0.3s" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                    <div style={{ width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(6,182,212,0.12)", border: "1px solid rgba(6,182,212,0.2)" }}>
+                                        <Sparkles size={14} style={{ color: "var(--accent-cyan)" }} />
+                                    </div>
+                                    <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--accent-cyan)" }}>AI Suggestion</span>
+                                    {loadingAiSuggestion && (
+                                        <motion.div
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                            style={{ marginLeft: 4 }}
+                                        >
+                                            <Loader2 size={13} style={{ color: "var(--accent-cyan)" }} />
+                                        </motion.div>
+                                    )}
+                                </div>
+                                {loadingAiSuggestion ? (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ height: 8, background: "rgba(6,182,212,0.08)", borderRadius: 4, marginBottom: 6, width: "85%" }}>
+                                                <motion.div
+                                                    animate={{ opacity: [0.3, 0.7, 0.3] }}
+                                                    transition={{ duration: 1.5, repeat: Infinity }}
+                                                    style={{ height: "100%", background: "rgba(6,182,212,0.15)", borderRadius: 4 }}
+                                                />
+                                            </div>
+                                            <div style={{ height: 8, background: "rgba(6,182,212,0.06)", borderRadius: 4, width: "60%" }}>
+                                                <motion.div
+                                                    animate={{ opacity: [0.3, 0.7, 0.3] }}
+                                                    transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
+                                                    style={{ height: "100%", background: "rgba(6,182,212,0.12)", borderRadius: 4 }}
+                                                />
+                                            </div>
+                                        </div>
+                                        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>Analyzing...</span>
+                                    </div>
+                                ) : (
+                                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+                                        {aiSuggestion || "Generating AI analysis…"}
+                                    </p>
+                                )}
+                            </div>
+                        </motion.div>
 
                         {/* Tabs */}
                         <div style={{ display: "flex", gap: 4, marginBottom: 16, overflowX: "auto", paddingBottom: 2 }}>
