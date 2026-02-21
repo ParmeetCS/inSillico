@@ -23,7 +23,7 @@ import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
 
 /* ═══════════════════════════════════════════════════════════
-   PersonaPlex Voice Assistant — Cerebras AI + NVIDIA Riva
+   PersonaPlex Voice Assistant — Gemini AI + NVIDIA Riva
    ═══════════════════════════════════════════════════════════ */
 
 /* ─── Types ─── */
@@ -47,7 +47,7 @@ interface ToolCallResult {
 interface SessionCapabilities {
     riva_asr: boolean;
     riva_tts: boolean;
-    cerebras_ai: boolean;
+    cerebras_ai: boolean; // kept for backward compat with Python backend
     tool_calling: boolean;
     streaming: boolean;
 }
@@ -87,7 +87,7 @@ const STATE_CONFIG = {
     processing: {
         color: "var(--accent-purple)",
         gradient: "linear-gradient(135deg, #8b5cf6, #3b82f6)",
-        label: "Cerebras AI thinking...",
+        label: "Gemini AI thinking...",
         bgGlow: "rgba(139,92,246,0.3)",
     },
     speaking: {
@@ -187,9 +187,9 @@ export default function VoiceAssistant() {
             });
 
             if (data.capabilities.cerebras_ai) {
-                toast("PersonaPlex connected — Cerebras AI ready", "success");
+                toast("PersonaPlex connected — Gemini AI ready", "success");
             } else {
-                toast("Voice session created (Cerebras not configured)", "info");
+                toast("Voice session created (Gemini not configured)", "info");
             }
         } catch (error) {
             console.warn("PersonaPlex session creation failed, using direct API fallback:", error);
@@ -395,7 +395,7 @@ export default function VoiceAssistant() {
     }, []);
 
     /* ═══════════════════════════════════════════════════════════
-       Process Query via PersonaPlex / Cerebras AI
+       Process Query via PersonaPlex / Gemini AI
        ═══════════════════════════════════════════════════════════ */
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -431,7 +431,7 @@ export default function VoiceAssistant() {
                     playRivaAudio(result.audioBase64);
                 }
             } else {
-                // Fallback to Next.js /api/copilot (Cerebras via edge)
+                // Fallback to Next.js /api/copilot (Gemini via edge)
                 const result = await processViaCopilotAPI(query);
                 responseText = result.text;
                 toolCalls = result.toolCalls;
@@ -1187,7 +1187,7 @@ export default function VoiceAssistant() {
                                                                 }}
                                                             >
                                                                 {msg.latencyMs}ms
-                                                                via Cerebras
+                                                                via Gemini
                                                             </div>
                                                         )}
                                                 </div>
@@ -1381,7 +1381,7 @@ export default function VoiceAssistant() {
                                 {state === "listening" &&
                                     "Tap again to stop & send"}
                                 {state === "processing" &&
-                                    "Cerebras AI analyzing..."}
+                                    "Gemini AI analyzing..."}
                                 {state === "speaking" &&
                                     "Tap to stop speaking"}
                             </div>
@@ -1453,7 +1453,7 @@ export default function VoiceAssistant() {
                                 }}
                             >
                                 <Zap size={8} />
-                                Cerebras AI
+                                Gemini AI
                                 {session?.capabilities.riva_tts && (
                                     <> + NVIDIA Riva</>
                                 )}

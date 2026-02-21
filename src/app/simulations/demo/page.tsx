@@ -6,7 +6,7 @@ import {
     Play, Atom, Thermometer, Gauge, Beaker, Zap, CheckCircle2,
     ChevronRight, Loader2, Copy, Pencil, FlaskConical,
     Activity, Shield, Droplets, AlertTriangle, BarChart3,
-    Clock, Cpu, TrendingUp
+    Clock, Cpu, TrendingUp, Sparkles
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { haptic } from "@/lib/haptics";
@@ -107,6 +107,8 @@ export default function SimulationDemoPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [moleculeFeatures, setMoleculeFeatures] = useState<any>(null);
     const [revealedFeatureCount, setRevealedFeatureCount] = useState(0);
+    const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+    const [loadingAiSuggestion, setLoadingAiSuggestion] = useState(false);
 
     const selectedCount = Object.values(properties).filter(Boolean).length;
     const estimatedCost = selectedCount * 5;
@@ -219,6 +221,34 @@ export default function SimulationDemoPage() {
         }, 1200);
         return () => clearInterval(interval);
     }, [phase, moleculeFeatures]);
+
+    /* ── Auto-generate AI suggestion when results are ready ── */
+    useEffect(() => {
+        if (phase !== "results" || aiSuggestion || loadingAiSuggestion) return;
+        const tox = mlResults?.toxicity_screening || {};
+        setLoadingAiSuggestion(true);
+        fetch("/api/copilot/summary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name: ASPIRIN.name,
+                smiles: ASPIRIN.smiles,
+                properties: mlResults?.properties || {},
+                toxicity: {
+                    herg: tox.herg_inhibition ?? 18,
+                    ames: tox.ames_mutagenicity ?? 12,
+                    hepato: tox.hepatotoxicity ?? 25,
+                },
+            }),
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.summary) setAiSuggestion(data.summary);
+                else setAiSuggestion("Unable to generate AI suggestion.");
+            })
+            .catch(() => setAiSuggestion("AI suggestion service unavailable."))
+            .finally(() => setLoadingAiSuggestion(false));
+    }, [phase, aiSuggestion, loadingAiSuggestion, mlResults]);
 
     /* ── Build result data from ML predictions or fallback ── */
     const DEMO_RESULTS = mlResults ? {
@@ -629,6 +659,32 @@ export default function SimulationDemoPage() {
                             );
                         })}
 
+                        {/* AI Suggestion — auto-generated */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.5 }}
+                        >
+                            <GlassCard padding="14px" glow="cyan">
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                    <Sparkles size={14} style={{ color: "var(--accent-cyan)" }} />
+                                    <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--accent-cyan)" }}>AI Suggestion</span>
+                                </div>
+                                {loadingAiSuggestion ? (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                                            <Loader2 size={13} style={{ color: "var(--accent-purple)" }} />
+                                        </motion.div>
+                                        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Generating AI suggestion...</span>
+                                    </div>
+                                ) : (
+                                    <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
+                                        {aiSuggestion || "Awaiting analysis..."}
+                                    </p>
+                                )}
+                            </GlassCard>
+                        </motion.div>
+
                         {/* Simulation meta */}
                         <GlassCard padding="14px" glow="purple">
                             <div style={{ fontSize: "0.78rem", fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
@@ -653,7 +709,7 @@ export default function SimulationDemoPage() {
                             className="btn-primary"
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.97 }}
-                            onClick={() => { setPhase("setup"); setProgress(0); }}
+                            onClick={() => { setPhase("setup"); setProgress(0); setAiSuggestion(null); }}
                             style={{ width: "100%", justifyContent: "center", padding: "12px 24px" }}
                         >
                             ← Back to Setup

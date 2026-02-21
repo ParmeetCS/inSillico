@@ -1,39 +1,37 @@
 /**
- * AI Summary — Cerebras AI Compound Analysis
+ * AI Summary — Gemini AI Compound Analysis
  * =============================================
  * 
  * POST /api/copilot/summary
  * Body: { name, smiles, properties, toxicity }
  * Returns: { summary: string }
  * 
- * Generates a concise 2-3 sentence AI analysis for a compound card.
- * Engine: Cerebras AI
+ * Generates a concise 1-2 sentence AI suggestion for a compound card.
+ * Engine: Google Gemma 3n (google/gemma-3n-e4b-it:free) via OpenRouter
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCerebrasClient } from "@/lib/cerebras-client";
+import { getGeminiClient } from "@/lib/gemini-client";
 
-const SYSTEM_PROMPT = `You are InSilico Lab's AI analyst. Given a molecule's predicted properties, produce a SHORT 2-3 sentence analysis covering:
-1. Key strengths of this compound
-2. Primary concern or risk (if any)
-3. One actionable recommendation
+const SYSTEM_PROMPT = `You are InSilico Lab's AI analyst. Given a molecule's predicted properties, produce a SHORT 1-2 sentence AI suggestion covering the single most important insight and one actionable recommendation.
 
 Rules:
-- Maximum 3 sentences, be extremely concise
+- Maximum 2 sentences, be extremely concise
 - Use pharmaceutical terminology naturally
 - Mention specific property values when relevant
 - Focus on drug-likeness and developability
 - If toxicity risks are high (>50%), flag them prominently
 - Do NOT use markdown formatting — plain text only
-- Do NOT repeat the molecule name at the start`;
+- Do NOT repeat the molecule name at the start
+- Frame as a suggestion/recommendation, not just analysis`;
 
 export async function POST(req: NextRequest) {
     try {
-        const cerebras = getCerebrasClient();
+        const gemini = getGeminiClient();
 
-        if (!cerebras.isConfigured()) {
+        if (!gemini.isConfigured()) {
             return NextResponse.json(
-                { error: "Cerebras API key not configured" },
+                { error: "Gemini API key not configured" },
                 { status: 500 }
             );
         }
@@ -53,9 +51,9 @@ Molecule: ${name || "Unknown"} (SMILES: ${smiles || "N/A"})
 Properties: ${JSON.stringify(properties || {})}
 Toxicity Screening: hERG=${toxicity?.herg || 0}%, Ames=${toxicity?.ames || 0}%, Hepatotoxicity=${toxicity?.hepato || 0}%
 
-Give a 2-3 sentence analysis.`;
+Give a 1-2 sentence AI suggestion.`;
 
-        const response = await cerebras.chatCompletion({
+        const response = await gemini.chatCompletion({
             messages: [
                 { role: "system", content: SYSTEM_PROMPT },
                 { role: "user", content: prompt },

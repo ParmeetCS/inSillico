@@ -35,7 +35,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# Load .env.local from project root so API keys (Cerebras, Riva, etc.)
+# Load .env.local from project root so API keys (Gemini, Riva, etc.)
 # are available to the Python process — Next.js only loads these for Node.
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_project_root, ".env.local"), override=False)
@@ -884,7 +884,7 @@ def voice_process():
     else:
         messages = [{"role": "user", "content": text}]
 
-    # Generate response via Cerebras
+    # Generate response via Gemini AI
     bridge = get_cerebras_bridge()
     result = bridge.generate_response(
         messages=messages,
@@ -1450,7 +1450,7 @@ def _initialize():
     logger.info("=" * 60)
     logger.info("  InSilico Lab — ML + Voice AI Server v2.2")
     logger.info("  Engine: QSPR v2.0 (ECFP4 + Ensemble)")
-    logger.info("  Voice:  PersonaPlex + Cerebras AI")
+    logger.info("  Voice:  PersonaPlex + Gemini AI")
     logger.info("=" * 60)
 
     load_qspr_models()
@@ -1467,9 +1467,9 @@ def _initialize():
         sm = get_session_manager()
         bridge = get_cerebras_bridge()
         if bridge.is_configured:
-            logger.info("  ✓ Cerebras AI configured")
+            logger.info("  ✓ Gemini AI configured")
         else:
-            logger.warning("  ✗ Cerebras API key not set — voice reasoning disabled")
+            logger.warning("  ✗ Gemini API key not set — voice reasoning disabled")
 
         asr = get_asr_client()
         tts = get_tts_client()
