@@ -4,3 +4,17 @@ __pycache__/
 .env*
 *.egg-info/
 .git/
+
+# Training scripts & data (not needed for serving)
+train_*.py
+evaluate_*.py
+download_*.py
+test_*.py
+data/
+
+# Legacy server
+server_v1_legacy.py
+
+# Documentation
+*.md
+LICENSE

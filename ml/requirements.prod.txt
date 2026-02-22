@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════════════
+#  InSilico ML Backend — Production Dependencies (slim)
+# ═══════════════════════════════════════════════════════════════
+#  Only packages needed to SERVE predictions.
+#  Excludes training-only deps (optuna, scipy, networkx).
+# ═══════════════════════════════════════════════════════════════
+
+# ── Web Framework ──
+flask>=3.0
+flask-cors>=4.0
+
+# ── Chemistry ──
+rdkit                  # SMILES parsing, Morgan FP, molecular descriptors
+
+# ── ML Models ──
+xgboost>=2.0           # Gradient boosted trees
+scikit-learn>=1.4      # RandomForest, StandardScaler, metrics
+
+# ── Data ──
+pandas>=2.1
+numpy>=1.26
+joblib>=1.3
+
+# ── Environment ──
+python-dotenv>=1.0     # Load .env.local for API keys
+
+# ── PersonaPlex Voice AI ──
+requests>=2.31         # Cerebras AI HTTP client
+edge-tts>=7.0          # Microsoft Edge Neural TTS
