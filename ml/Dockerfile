@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-#  InSilico ML Backend — Docker Image for Railway Deployment
+#  InSilico ML Backend — Docker Image for Render Deployment
 # ═══════════════════════════════════════════════════════════════
 
 FROM python:3.11-slim
@@ -19,8 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn
 # Copy the entire ML directory
 COPY . .
 
-# Railway sets PORT env variable automatically
-ENV PORT=5001
+# Render sets PORT env variable automatically (default 10000)
+ENV PORT=10000
 ENV PYTHONUNBUFFERED=1
 
 # Expose port
