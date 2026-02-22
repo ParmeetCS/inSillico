@@ -5,7 +5,7 @@ import { ReactNode } from "react";
 interface GlassCardProps {
     children: ReactNode;
     className?: string;
-    glow?: "blue" | "green" | "purple" | "none";
+    glow?: "blue" | "green" | "purple" | "cyan" | "none";
     padding?: string;
     hover?: boolean;
     onClick?: () => void;

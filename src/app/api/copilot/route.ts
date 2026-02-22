@@ -218,7 +218,8 @@ export async function POST(req: NextRequest) {
         };
 
         let reply: string | undefined;
-        let response;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let response: any;
         let toolResults: Array<{ name: string; result: string }> = [];
 
         // Reasoning models sometimes return empty content — retry up to 2 times

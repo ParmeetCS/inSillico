@@ -47,10 +47,12 @@ interface DiseaseInferenceData {
     diseases: DiseaseResult[];
     disease_count: number;
     suppressed_count: number;
+    suppressed_diseases?: DiseaseResult[];
     therapeutic_areas: Record<string, number>;
-    network_coherence: { is_coherent: boolean; coherence_score: number; flags: string[] };
-    target_summary: { high_confidence: number; medium_confidence: number; low_confidence: number };
-    ai_suggestion: { has_suggestion: boolean; message: string; confidence: string };
+    network_coherence: { is_coherent: boolean; coherence_score: number; flags: string[]; [key: string]: unknown };
+    target_summary?: { total?: number; high_confidence?: number; medium_confidence?: number; low_confidence?: number; [key: string]: unknown };
+    drug_validation?: { [key: string]: unknown };
+    ai_suggestion?: string;
 }
 
 export interface NetworkPharmacologyReportData {
