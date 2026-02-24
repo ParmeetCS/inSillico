@@ -38,7 +38,6 @@
   <img src="https://img.shields.io/badge/Open_Targets-Disease_Mapping-ef4444" />
   <img src="https://img.shields.io/badge/Groq-AI_Copilot-f55036" />
   <img src="https://img.shields.io/badge/PersonaPlex-Voice_AI-22c55e" />
-  <img src="https://img.shields.io/badge/Docker-Render-0db7ed?logo=docker" />
 </p>
 
 ---
@@ -265,12 +264,10 @@ Each step card transitions through `waiting → running → complete` with:
 | **PersonaPlex** | Voice AI session pipeline |
 | **python-dotenv** | Auto-loads `.env.local` for API keys |
 
-### DevOps & Deployment
+### DevOps
 | Technology | Purpose |
 |-----------|---------|
 | **Docker** | ML backend containerization |
-| **Render** | ML server cloud deployment |
-| **Vercel** | Frontend deployment (Next.js) |
 | **Gunicorn** | Production WSGI server (2 workers, 120s timeout) |
 | **Concurrently** | Runs Next.js + Flask in parallel during dev |
 
@@ -862,7 +859,7 @@ inSillico/
 │   ├── test_consistency.py         # Model consistency tests
 │   ├── train_admet.py             # 🧪 ADMET v4.0 training pipeline
 │   ├── requirements.txt            # Python dependencies
-│   ├── Dockerfile                  # Docker image for Render deployment
+│   ├── Dockerfile                  # Docker image for ML backend deployment
 │   ├── admet/                      # 🧪 ADMET v4.0 Domain-Aware Package
 │   │   ├── __init__.py            #   Package root (v1.0.0)
 │   │   ├── config.py              #   Central config (17 endpoints, 6 data sources, hyperparams)
@@ -920,7 +917,6 @@ inSillico/
 │       ├── *.joblib               #   Legacy v1 models
 │       └── training_metadata.json #   Legacy training metadata
 ├── public/                         # Static assets & logos
-├── render.yaml                     # Render deployment config
 ├── supabase_migration_prediction_results.sql  # DB migration script
 ├── package.json                    # npm scripts & dependencies
 └── tsconfig.json                   # TypeScript configuration
@@ -930,38 +926,33 @@ inSillico/
 
 ## 🚀 Deployment
 
-### Frontend → Vercel
+### ML Backend (Docker)
 
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel --prod
-```
-
-Set environment variables in the Vercel dashboard:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `GROQ_API_KEY`
-- `ML_BACKEND_URL` → your Render deployment URL (e.g. `https://insillico-ml.onrender.com`)
-
-### ML Backend → Render (Docker)
-
-The ML server includes a production-ready `Dockerfile` and `render.yaml`:
+The ML server includes a production-ready `Dockerfile`:
 
 ```bash
 # Local Docker build & test
 cd ml
 docker build -t insilico-ml .
-docker run -p 10000:10000 --env-file ../.env.local insilico-ml
+docker run -p 5001:5001 --env-file ../.env.local insilico-ml
 ```
 
-Render config (`render.yaml`):
-- **Runtime**: Docker (`ml/Dockerfile`)
-- **Health check**: `/health`
-- **Plan**: Free tier
-- **Server**: Gunicorn with 2 workers, 120s request timeout
+Deploy the Docker image to any cloud provider (AWS, GCP, Azure, Railway, Fly.io, etc.) and set `ML_BACKEND_URL` in your frontend environment.
+
+### Frontend
+
+Deploy the Next.js app to any hosting platform that supports Node.js:
+
+```bash
+npm run build
+npm run start
+```
+
+Set these environment variables on your hosting platform:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `GROQ_API_KEY`
+- `ML_BACKEND_URL` → your ML server deployment URL
 
 ---
 
@@ -981,7 +972,7 @@ Render config (`render.yaml`):
 | **Dataset lookup** | Query 8,862 measured values mid-conversation | Manual search |
 | **Reports** | One-click PDF/CSV export | Manual export |
 | **UI/UX** | Modern glassmorphism, Framer Motion, Three.js | Legacy interfaces |
-| **Deployment** | Vercel + Render + Supabase (free tier) | On-premises only |
+| **Deployment** | Docker + any cloud provider + Supabase | On-premises only |
 
 ---
 
