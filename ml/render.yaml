@@ -21,7 +21,17 @@ services:
         value: "10000"
       - key: LOW_MEMORY
         value: "1"                    # XGBoost-only mode (skip RF + ADMET)
+      # ── LLM for voice reasoning (set one of these) ──
       - key: GROQ_API_KEY
         sync: false                   # manually set in Render dashboard
+      - key: GROQ_MODEL
+        value: "openai/gpt-oss-120b"
+      # ── NVIDIA Riva ASR/TTS ──
+      - key: RIVA_API_URL
+        value: "grpc.nvcf.nvidia.com:443"
       - key: RIVA_API_KEY
-        sync: false
+        sync: false                   # nvapi-... key, set in dashboard
+      - key: RIVA_TTS_VOICE
+        value: "English-US.Female-1"
+      - key: RIVA_USE_SSL
+        value: "true"

@@ -28,3 +28,6 @@ python-dotenv>=1.0,<2   # Load .env.local for API keys
 # ── PersonaPlex Voice AI ──
 requests>=2.31,<3       # Cerebras AI HTTP client
 edge-tts>=7.0,<8        # Microsoft Edge Neural TTS
+# ── NVIDIA Riva ASR/TTS (Cloud via NVCF) ──
+nvidia-riva-client>=2.14  # gRPC client for Riva ASR + TTS
+grpcio>=1.60              # gRPC transport (required by riva-client)
