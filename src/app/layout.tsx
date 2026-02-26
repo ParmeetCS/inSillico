@@ -4,7 +4,12 @@ import "./globals.css";
 import { Navbar } from "@/components/layout/navbar";
 import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/ui/toast";
-import VoiceAssistant from "@/components/voice-assistant";
+import dynamic from "next/dynamic";
+
+// Lazy-load VoiceAssistant (1583 lines + framer-motion) — not needed for initial paint
+const VoiceAssistant = dynamic(() => import("@/components/voice-assistant"), {
+  ssr: false,
+});
 
 const inter = Inter({
   subsets: ["latin"],

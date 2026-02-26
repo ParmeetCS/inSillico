@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
 import {
     Play, Atom, Thermometer, Gauge, Beaker, Zap, CheckCircle2,
     ChevronRight, Loader2, Copy, Pencil, FlaskConical,
@@ -14,12 +15,14 @@ import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
-import MoleculeViewer3D from "@/components/molecule-viewer-3d";
-import DrugLikenessGauge from "@/components/drug-likeness-gauge";
-import {
-    RadarPropertyChart, PropertyBarChart,
-    ToxicityGauges, SolubilityCurve,
-} from "@/components/plotly-charts";
+
+// Lazy-load heavy visualization components
+const MoleculeViewer3D = dynamic(() => import("@/components/molecule-viewer-3d"), { ssr: false });
+const DrugLikenessGauge = dynamic(() => import("@/components/drug-likeness-gauge"), { ssr: false });
+const RadarPropertyChart = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.RadarPropertyChart })), { ssr: false });
+const PropertyBarChart = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.PropertyBarChart })), { ssr: false });
+const ToxicityGauges = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.ToxicityGauges })), { ssr: false });
+const SolubilityCurve = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.SolubilityCurve })), { ssr: false });
 
 /* ─── Property Options ─── */
 const propertyOptions = [
