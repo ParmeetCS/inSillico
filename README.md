@@ -926,33 +926,98 @@ inSillico/
 
 ## 🚀 Deployment
 
-### ML Backend (Docker)
+InSilico uses a 3-service architecture deployed across free tiers:
 
-The ML server includes a production-ready `Dockerfile`:
+```
+┌───────────────┐       ┌──────────────────┐       ┌──────────────┐
+│   Vercel       │──API──▶  Render (Docker)  │──SQL──▶  Supabase     │
+│   Next.js 16   │       │  Flask + RDKit    │       │  PostgreSQL   │
+│   Free tier    │       │  Free tier        │       │  Free tier    │
+└───────────────┘       └──────────────────┘       └──────────────┘
+```
+
+### 1. Database — Supabase (already hosted)
+
+Your Supabase project is cloud-hosted. Run the migration to create the `prediction_results` table:
+
+```sql
+-- Apply the migration in Supabase SQL Editor
+-- File: supabase_migration_prediction_results.sql
+```
+
+### 2. ML Backend — Render (Docker, Free Tier)
+
+The ML server has a production-optimized, memory-efficient Dockerfile for Render's 512 MB free tier.
+
+1. Push code to GitHub  
+2. Go to [render.com](https://render.com) → **New** → **Web Service**
+3. Configure:
+
+| Field | Value |
+|---|---|
+| **Repository** | Your GitHub repo |
+| **Root Directory** | `inSillico/ml` |
+| **Runtime** | `Docker` |
+| **Instance Type** | `Free` (512 MB) |
+| **Health Check Path** | `/health` |
+
+4. **Environment Variables** (set in Render dashboard):
+
+| Key | Value |
+|---|---|
+| `PORT` | `10000` |
+| `LOW_MEMORY` | `1` (loads XGBoost-only, skips RandomForest/ADMET to fit 512 MB) |
+| `GROQ_API_KEY` | Your Groq API key (for voice AI reasoning) |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` |
+| `RIVA_API_URL` | `grpc.nvcf.nvidia.com:443` |
+| `RIVA_API_KEY` | Your NVIDIA Riva API key |
+| `RIVA_TTS_VOICE` | `English-US.Female-1` |
+| `RIVA_USE_SSL` | `true` |
+
+Or use the included `render.yaml` Blueprint for one-click deploy.
+
+**Local Docker build & test:**
 
 ```bash
-# Local Docker build & test
 cd ml
 docker build -t insilico-ml .
-docker run -p 5001:5001 --env-file ../.env.local insilico-ml
+docker run -p 10000:10000 --env-file ../.env.local -e LOW_MEMORY=1 insilico-ml
 ```
 
-Deploy the Docker image to any cloud provider (AWS, GCP, Azure, Railway, Fly.io, etc.) and set `ML_BACKEND_URL` in your frontend environment.
+### 3. Frontend — Vercel (Free Tier)
 
-### Frontend
+1. Push code to GitHub
+2. Go to [vercel.com](https://vercel.com) → **New Project** → Import repo
+3. Configure:
 
-Deploy the Next.js app to any hosting platform that supports Node.js:
+| Field | Value |
+|---|---|
+| **Framework Preset** | `Next.js` |
+| **Root Directory** | `inSillico` |
+| **Build Command** | `next build` (default) |
 
-```bash
-npm run build
-npm run start
-```
+4. **Environment Variables** (set in Vercel dashboard):
 
-Set these environment variables on your hosting platform:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `GROQ_API_KEY`
-- `ML_BACKEND_URL` → your ML server deployment URL
+| Key | Value | Scope |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL | Browser + Server |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key | Browser + Server |
+| `NEXT_PUBLIC_ML_BACKEND_URL` | `https://your-service.onrender.com` | Browser + Server |
+| `ML_BACKEND_URL` | `https://your-service.onrender.com` | Server only |
+| `GROQ_API_KEY` | Your Groq API key | Server only |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Server only |
+| `RIVA_API_URL` | `grpc.nvcf.nvidia.com:443` | Server only |
+| `RIVA_API_KEY` | Your NVIDIA Riva key | Server only |
+| `RIVA_TTS_VOICE` | `English-US.Female-1` | Server only |
+| `RIVA_USE_SSL` | `true` | Server only |
+
+### Cost Summary
+
+| Service | Cost | Limits |
+|---|---|---|
+| **Vercel** | $0 | 100 GB bandwidth, serverless functions |
+| **Render** | $0 | 512 MB RAM, sleeps after 15 min idle |
+| **Supabase** | $0 | 500 MB DB, 1 GB file storage |
 
 ---
 
@@ -972,7 +1037,7 @@ Set these environment variables on your hosting platform:
 | **Dataset lookup** | Query 8,862 measured values mid-conversation | Manual search |
 | **Reports** | One-click PDF/CSV export | Manual export |
 | **UI/UX** | Modern glassmorphism, Framer Motion, Three.js | Legacy interfaces |
-| **Deployment** | Docker + any cloud provider + Supabase | On-premises only |
+| **Deployment** | Vercel + Render + Supabase (all free tier) | On-premises only |
 
 ---
 
