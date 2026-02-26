@@ -4,12 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/layout/navbar";
 import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/ui/toast";
-import dynamic from "next/dynamic";
-
-// Lazy-load VoiceAssistant (1583 lines + framer-motion) — not needed for initial paint
-const VoiceAssistant = dynamic(() => import("@/components/voice-assistant"), {
-  ssr: false,
-});
+import VoiceAssistantWrapper from "@/components/voice-assistant-wrapper";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -51,7 +46,7 @@ export default function RootLayout({
             <div className="particle-bg" />
             <div className="molecule-grid" />
             <Navbar />
-            <VoiceAssistant />
+            <VoiceAssistantWrapper />
             {children}
           </ToastProvider>
         </AuthProvider>
