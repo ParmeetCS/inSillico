@@ -509,18 +509,33 @@ def predict():
 
         # ── Step 3: Derive final property values ──
 
-        # LogP — blend QSPR prediction with RDKit Crippen to improve accuracy
-        # QSPR model R²≈0.50 so we use confidence-weighted blending:
-        #   high confidence  → trust QSPR more
-        #   low confidence   → fall back toward validated Crippen method
+        # LogP — blend QSPR prediction with RDKit Crippen
+        # Crippen LogP is a well-validated physics-based method (Wildman-Crippen).
+        # QSPR model was trained on Lipophilicity (logD) which differs from logP,
+        # and has R² ≈ 0.50 on scaffold splits.  Strategy:
+        #   • If QSPR confidence is high  → moderate blend (50/50)
+        #   • If QSPR confidence is low   → lean heavily on Crippen (80/20)
+        #   • Always sanity-check: for pure hydrocarbons (no heteroatoms),
+        #     Crippen is near-exact, so trust it almost entirely.
         qspr_logp = logp_pred.get("value", rdkit_props["logp_crippen"])
         crippen_logp = rdkit_props["logp_crippen"]
         logp_confidence = logp_pred.get("confidence", 0.5)
-        # Blend weight: at confidence=1.0 → 70% QSPR, at confidence=0.0 → 20% QSPR
-        qspr_weight = 0.2 + 0.5 * logp_confidence
+        n_heteroatoms = rdkit_props.get("heavy_atoms", 0) - sum(
+            1 for c in smiles if c.upper() in ('C',)
+        )
+        # For very simple / pure hydrocarbon molecules, Crippen is highly accurate
+        from rdkit import Chem as _Chem
+        _mol_tmp = _Chem.MolFromSmiles(smiles)
+        _num_hetero = Descriptors.NumHeteroatoms(_mol_tmp) if _mol_tmp else 0
+        if _num_hetero == 0:
+            # Pure hydrocarbon — Crippen is essentially exact
+            qspr_weight = 0.05
+        else:
+            # Blend weight: at confidence=1.0 → 50% QSPR, at confidence=0.0 → 10% QSPR
+            qspr_weight = 0.1 + 0.4 * logp_confidence
         logp_value = qspr_weight * qspr_logp + (1 - qspr_weight) * crippen_logp
-        # Update confidence to reflect the blended estimate (never below Crippen's baseline)
-        logp_confidence = max(logp_confidence, 0.55)
+        # Confidence reflects blend quality
+        logp_confidence = max(logp_confidence, 0.60 if _num_hetero == 0 else 0.55)
 
         # pKa — heuristic (no QSPR model for pKa yet)
         mol_from_fp = fp_calculator.smiles_to_mol(smiles) if fp_calculator else None
@@ -544,17 +559,69 @@ def predict():
         else:
             pka_value = None  # Non-ionizable molecule — no meaningful pKa
 
-        # Solubility — convert logS to mg/mL
+        # Solubility — convert logS (mol/L) to mg/mL
+        # ESOL target: "measured log solubility in mols per litre" = log10(S [mol/L])
+        # Conversion:
+        #   S [mol/L] = 10^logS
+        #   S [g/L]   = 10^logS × MW
+        #   S [mg/mL] = 10^logS × MW / 1000   (since 1 g/L = 1 mg/mL only if ÷1000 from g→mg and L→mL cancel — actually 1 g/L = 1 mg/mL)
+        #
+        # Wait — 1 g/L = 1 mg/mL is INCORRECT:
+        #   1 g/L = 0.001 g/mL = 1 mg/mL  ← actually this IS correct (g→mg = ×1000, L→mL = ÷1000, they cancel)
+        # BUT the original formula was: 10^logS × MW  which gives g/L directly,
+        # and g/L == mg/mL.  So let's re-check the actual numbers:
+        #
+        # For the problematic compound (pure hydrocarbon, MW ≈ 130):
+        #   If logS ≈ -1 (model prediction), then 10^(-1) × 130 = 13 g/L = 13 mg/mL
+        #   Real solubility of styrene derivatives: ~0.3 mg/mL
+        #   So logS should be ~ -2.6 for this compound
+        #
+        # The issue is the QSPR model may predict logS poorly for out-of-domain
+        # molecules.  We add a Crippen LogP–based sanity correction:
+        # Yalkowsky-Valvani equation: logS ≈ 0.5 - logP - 0.01*(MP-25)
+        # For liquids at room temp, MP≈25: logS ≈ 0.5 - logP
         logs_value = sol_pred.get("value", -2.0)
         sol_confidence = max(sol_pred.get("confidence", 0.5), 0.45)
         mw = rdkit_props["molecular_weight"]
-        sol_mg_ml = round(10 ** logs_value * mw, 3)
-        sol_mg_ml = max(0.001, min(sol_mg_ml, 999999))
+
+        # Yalkowsky-Valvani estimate as sanity check
+        # logS ≈ 0.5 - logP(Crippen) - 0.01*(MP - 25)
+        # We don't know MP, so assume room-temp liquid → MP correction ≈ 0
+        yv_logs = 0.5 - crippen_logp
+
+        # If QSPR logS is unreasonably far from the YV estimate, blend toward YV
+        logs_diff = abs(logs_value - yv_logs)
+        if logs_diff > 2.0:
+            # Large disagreement — trust Yalkowsky-Valvani more
+            logs_value = 0.3 * logs_value + 0.7 * yv_logs
+            sol_confidence = min(sol_confidence, 0.4)
+        elif logs_diff > 1.0:
+            # Moderate disagreement — blend
+            logs_value = 0.6 * logs_value + 0.4 * yv_logs
+            sol_confidence = min(sol_confidence, 0.55)
+
+        # For pure hydrocarbons (no heteroatoms), YV equation is very reliable
+        if _num_hetero == 0:
+            logs_value = 0.15 * logs_value + 0.85 * yv_logs
+            sol_confidence = min(sol_confidence, 0.5)
+
+        # Convert logS (mol/L) → mg/mL:
+        #   10^logS [mol/L] × MW [g/mol] = solubility in g/L
+        #   g/L == mg/mL  (the ×1000 and ÷1000 cancel)
+        sol_mg_ml = round(10 ** logs_value * mw, 4)
+        sol_mg_ml = max(0.0001, min(sol_mg_ml, 999999))
 
         # TPSA — directly from RDKit (exact)
         tpsa_value = rdkit_props["tpsa"]
 
-        # Bioavailability — Lipinski + BBB prediction
+        # Bioavailability — improved multi-factor estimation
+        # Previous formula: base×(0.6 + 0.4×bbbp_prob) gave ≈100% for all small molecules.
+        # New approach considers:
+        #   1. Lipinski violations (absorption)
+        #   2. TPSA (intestinal absorption: optimal 20–120 Å²)
+        #   3. LogP (metabolism risk: high LogP → CYP metabolism → lower F)
+        #   4. Molecular weight (small molecules metabolized faster)
+        #   5. BBB penetration probability (as a bonus marker, not the main driver)
         hbd = rdkit_props["hbd"]
         hba = rdkit_props["hba"]
         lipinski_violations = sum([
@@ -565,24 +632,132 @@ def predict():
         ])
         bbbp_prob = bbbp_pred.get("probability", 0.5)
         bbbp_confidence = max(bbbp_pred.get("confidence", 0.5), 0.5)
-        bioavail_base = max(0, 100 - lipinski_violations * 25)
-        bioavail_value = round(bioavail_base * (0.6 + 0.4 * bbbp_prob))
 
-        # Toxicity
+        # Start with Lipinski-based absorption estimate
+        bioavail_base = max(0, 100 - lipinski_violations * 20)
+
+        # TPSA penalty — very low TPSA (<20) means high membrane permeability
+        # but also means rapid metabolism and poor formulation; very high TPSA
+        # (>120) means poor absorption
+        if tpsa_value < 10:
+            tpsa_penalty = 15  # Very lipophilic, likely rapid metabolism
+        elif tpsa_value < 20:
+            tpsa_penalty = 5
+        elif tpsa_value <= 120:
+            tpsa_penalty = 0  # Optimal range
+        elif tpsa_value <= 140:
+            tpsa_penalty = 10
+        else:
+            tpsa_penalty = 25
+
+        # LogP-based metabolism penalty
+        # Highly lipophilic compounds are extensively CYP-metabolized
+        # LogP 1–3 is optimal; >3.5 triggers CYP3A4/2D6 oxidation
+        if logp_value > 4.5:
+            logp_metabolism_penalty = 30
+        elif logp_value > 3.5:
+            logp_metabolism_penalty = 20
+        elif logp_value > 3.0:
+            logp_metabolism_penalty = 10
+        elif logp_value > 2.0:
+            logp_metabolism_penalty = 5
+        elif logp_value < -1.0:
+            logp_metabolism_penalty = 15  # Too hydrophilic — poor absorption
+        else:
+            logp_metabolism_penalty = 0
+
+        # Small aromatic hydrocarbons penalty — undergo extensive phase I metabolism
+        aromatic_rings = rdkit_props.get("aromatic_rings", 0)
+        if _num_hetero == 0 and aromatic_rings > 0:
+            # Pure hydrocarbon with aromatic rings — metabolic liability
+            logp_metabolism_penalty += 20
+
+        # Solubility penalty — very low solubility limits dissolution and absorption
+        if sol_mg_ml < 0.01:
+            sol_penalty = 20
+        elif sol_mg_ml < 0.1:
+            sol_penalty = 10
+        elif sol_mg_ml < 1.0:
+            sol_penalty = 5
+        else:
+            sol_penalty = 0
+
+        # BBB contribution (minor factor — BBB ≠ oral bioavailability)
+        bbbp_bonus = round(bbbp_prob * 5)  # 0–5% bonus, not 40%
+
+        bioavail_value = round(max(5, min(99,
+            bioavail_base - tpsa_penalty - logp_metabolism_penalty - sol_penalty + bbbp_bonus
+        )))
+
+        # Toxicity — enhanced with structural alert corrections
+        # ClinTox model captures clinical trial failures, but may miss:
+        #   - Reactive metabolite formers (vinyl aromatics → epoxides)
+        #   - Michael acceptors (α,β-unsaturated carbonyls)
+        #   - Known toxicophores (anilines, nitro aromatics, etc.)
+        # We augment the ML prediction with SMARTS-based structural alerts.
         tox_prob = tox_pred.get("probability", 0.1)
         tox_confidence = max(tox_pred.get("confidence", 0.5), 0.5)
-        if tox_prob < 0.2:
+
+        # Structural alert checks using SMARTS
+        structural_alerts = []
+        _smarts_alerts = {
+            # Vinyl/allyl benzene → CYP-mediated epoxide → reactive metabolite
+            "vinyl_aromatic": ("[c]C=C", 0.15, "Vinyl aromatic — potential reactive epoxide metabolite"),
+            # Michael acceptors (α,β-unsaturated carbonyl)
+            "michael_acceptor": ("[#6]=[#6]-[#6]=[O,S]", 0.20, "Michael acceptor — electrophilic reactivity"),
+            # Aromatic amine — metabolic activation to nitrenium ions
+            "aromatic_amine": ("[c][NH2]", 0.15, "Aromatic primary amine — mutagenicity risk"),
+            # Nitro aromatic — reductive activation
+            "nitro_aromatic": ("[c][N+](=O)[O-]", 0.20, "Nitro aromatic — reductive bioactivation"),
+            # Acyl halide — highly reactive
+            "acyl_halide": ("[CX3](=O)[F,Cl,Br,I]", 0.25, "Acyl halide — high reactivity"),
+            # Epoxide — electrophilic, DNA damage
+            "epoxide": ("[OX2r3]1[#6r3][#6r3]1", 0.25, "Epoxide — electrophilic/genotoxic"),
+            # Aldehyde — reactive with proteins
+            "aldehyde": ("[CH1](=O)", 0.10, "Aldehyde — protein reactivity"),
+            # Polycyclic aromatic (≥3 fused rings) — intercalation / carcinogenicity
+            "polyaromatic": ("c1ccc2c(c1)ccc3ccccc23", 0.12, "Polycyclic aromatic — potential carcinogen"),
+            # Hydrazine — hepatotoxicity
+            "hydrazine": ("[NX3][NX3]", 0.15, "Hydrazine — hepatotoxicity risk"),
+            # Thiocarbonyl — reactive
+            "thiocarbonyl": ("[#6](=S)", 0.10, "Thiocarbonyl — reactive"),
+        }
+
+        alert_boost = 0.0
+        for alert_name, (smart, boost, desc) in _smarts_alerts.items():
+            pat = Chem.MolFromSmarts(smart)
+            if pat and mol.HasSubstructMatch(pat):
+                structural_alerts.append({"alert": alert_name, "description": desc, "severity_boost": boost})
+                alert_boost += boost
+
+        # Cap the total structural alert boost
+        alert_boost = min(alert_boost, 0.50)
+
+        # Combine ML probability with structural alert boost
+        tox_prob_adjusted = min(tox_prob + alert_boost, 0.99)
+
+        # Adjust confidence downward if structural alerts disagree with ML
+        if alert_boost > 0.1 and tox_prob < 0.2:
+            # ML says low tox but structure is concerning — lower confidence
+            tox_confidence = min(tox_confidence, 0.45)
+
+        if tox_prob_adjusted < 0.2:
             tox_label = "Low"
-        elif tox_prob < 0.5:
+        elif tox_prob_adjusted < 0.5:
             tox_label = "Moderate"
         else:
             tox_label = "High"
 
-        # Toxicity sub-scores (derived from overall toxicity probability)
-        # Deterministic derivation from tox_prob (no randomness in v2)
-        herg_prob = round(min(tox_prob * 0.4 + 0.02, 1.0), 4)
-        ames_prob = round(min(tox_prob * 0.3 + 0.01, 1.0), 4)
-        hepato_prob = round(min(tox_prob * 0.6 + 0.03, 1.0), 4)
+        # Toxicity sub-scores — incorporate structural alerts
+        herg_prob = round(min(tox_prob_adjusted * 0.4 + 0.02, 1.0), 4)
+        ames_prob = round(min(tox_prob_adjusted * 0.3 + 0.01 + (0.1 if any(
+            a["alert"] in ("aromatic_amine", "nitro_aromatic", "epoxide", "michael_acceptor")
+            for a in structural_alerts
+        ) else 0.0), 1.0), 4)
+        hepato_prob = round(min(tox_prob_adjusted * 0.6 + 0.03 + (0.08 if any(
+            a["alert"] in ("hydrazine", "vinyl_aromatic")
+            for a in structural_alerts
+        ) else 0.0), 1.0), 4)
 
         # Confidence — weighted average including exact RDKit properties
         # TPSA and pKa have known confidence; include them to boost overall
@@ -662,6 +837,9 @@ def predict():
                 "ames_mutagenicity": round(ames_prob * 100, 1),
                 "hepatotoxicity": round(hepato_prob * 100, 1),
             },
+
+            # ── Structural alerts ──
+            "structural_alerts": structural_alerts,
 
             # ── Lipinski Rule of 5 ──
             "lipinski": {
