@@ -164,7 +164,8 @@ function SimulationSetupInner() {
             .eq("id", moleculeId)
             .single();
         if (data) setMolecule(data);
-    }, [moleculeId, supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [moleculeId]);
 
     useEffect(() => {
         if (!user) { router.push("/auth/login"); return; }

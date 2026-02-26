@@ -308,7 +308,8 @@ export default function ResultsIndexPage() {
 
         setSimulations(transformed);
         setLoading(false);
-    }, [user, supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user]);
 
     useEffect(() => {
         if (!authLoading && !user) {

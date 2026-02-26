@@ -97,7 +97,8 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
         }
         setSim(data as unknown as SimulationResult);
         setLoading(false);
-    }, [id, supabase, router]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, router]);
 
     useEffect(() => {
         if (!user) {
