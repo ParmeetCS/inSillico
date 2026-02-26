@@ -69,7 +69,7 @@ interface SpeechRecognitionErrorEvent {
 }
 
 /* ─── Constants ─── */
-const ML_BACKEND = process.env.NEXT_PUBLIC_ML_BACKEND_URL || "http://localhost:5001";
+const ML_BACKEND = process.env.NEXT_PUBLIC_ML_BACKEND_URL || "https://insillico.onrender.com";
 
 const STATE_CONFIG = {
     idle: {

@@ -4,24 +4,20 @@
  * POST /api/predict
  * Body: { smiles: string, model_type?: "xgboost" | "random_forest" }
  * 
- * Forwards predictions from the Python Flask ML backend (port 5001)
+ * Forwards predictions from the Python Flask ML backend (Render deployment)
  * running QSPR v2.0 Ensemble (RandomForest + XGBoost, Morgan FP ECFP4).
  * 
- * Fallback: Uses client-side mock predictor if backend is unreachable.
+ * No mock fallback — all predictions come from the real ML backend.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateMockPrediction } from "@/lib/ml-mock";
 
-const ML_SERVER_URL = process.env.ML_BACKEND_URL || "http://localhost:5001";
+const ML_SERVER_URL = process.env.ML_BACKEND_URL || "https://insillico.onrender.com";
 
 export async function POST(req: NextRequest) {
-    let smiles = "";
-
     try {
         const body = await req.json();
-        smiles = body.smiles;
-        const { model_type = "xgboost" } = body;
+        const { smiles, model_type = "xgboost" } = body;
 
         if (!smiles) {
             return NextResponse.json(
@@ -30,9 +26,9 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Try to fetch from ML server with a timeout
+        // Render free tier can cold-start in ~30–60s — use generous timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout
 
         try {
             const response = await fetch(`${ML_SERVER_URL}/predict`, {
@@ -44,13 +40,7 @@ export async function POST(req: NextRequest) {
             clearTimeout(timeoutId);
 
             if (!response.ok) {
-                // If the server returns an error (but is reachable), try to parse it
-                // If it's a 500/404, we might also want to fallback to mock for demo purposes?
-                // For now, let's respect the server's error unless it's a severe failure.
-                if (response.status >= 500) {
-                    throw new Error(`ML Server Error: ${response.statusText}`);
-                }
-                const err = await response.json().catch(() => ({ error: "ML server error" }));
+                const err = await response.json().catch(() => ({ error: `ML server error (${response.status})` }));
                 return NextResponse.json(err, { status: response.status });
             }
 
@@ -58,10 +48,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(predictions);
         } catch (fetchError) {
             clearTimeout(timeoutId);
-            // Fallback to mock service
-            console.warn("ML Server unreachable or timed out. Using mock fallback.", fetchError);
-            const mockData = generateMockPrediction(smiles);
-            return NextResponse.json(mockData);
+            const isAbort = fetchError instanceof DOMException && fetchError.name === "AbortError";
+            console.error("ML Server error:", fetchError);
+            return NextResponse.json(
+                {
+                    error: isAbort
+                        ? "ML server timed out. The server may be waking up from sleep — please try again in 30 seconds."
+                        : "ML server is unreachable. Please ensure the backend is running.",
+                },
+                { status: 503 }
+            );
         }
 
     } catch (error) {

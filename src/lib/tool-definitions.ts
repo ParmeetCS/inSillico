@@ -16,7 +16,7 @@
 import type { CerebrasToolDefinition } from "./cerebras-client";
 
 /* ─── ML Backend URL ─── */
-const ML_BACKEND = process.env.ML_BACKEND_URL || "http://localhost:5001";
+const ML_BACKEND = process.env.ML_BACKEND_URL || "https://insillico.onrender.com";
 
 /* ─── Tool Definitions (JSON Schema for Cerebras function calling) ─── */
 

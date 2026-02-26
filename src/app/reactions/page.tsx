@@ -43,7 +43,7 @@ const MolecularScene = dynamic(
     { ssr: false }
 );
 
-const ML_API = process.env.NEXT_PUBLIC_ML_API_URL || "http://localhost:5001";
+const ML_API = process.env.NEXT_PUBLIC_ML_API_URL || "https://insillico.onrender.com";
 
 // ─── Demo molecules for quick start ────────────────────────────────────────
 const DEMO_MOLECULES: { name: string; smiles: string }[] = [
