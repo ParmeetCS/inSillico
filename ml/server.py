@@ -525,8 +525,9 @@ def predict():
         )
         # For very simple / pure hydrocarbon molecules, Crippen is highly accurate
         from rdkit import Chem as _Chem
+        from rdkit.Chem import Descriptors as _Desc
         _mol_tmp = _Chem.MolFromSmiles(smiles)
-        _num_hetero = Descriptors.NumHeteroatoms(_mol_tmp) if _mol_tmp else 0
+        _num_hetero = _Desc.NumHeteroatoms(_mol_tmp) if _mol_tmp else 0
         if _num_hetero == 0:
             # Pure hydrocarbon — Crippen is essentially exact
             qspr_weight = 0.05
