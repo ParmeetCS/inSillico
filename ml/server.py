@@ -75,6 +75,10 @@ try:
 except ImportError as _admet_err:
     ADMET_AVAILABLE = False
 
+# ─── Low-memory mode (for Render 512 MB free tier) ───
+# Set LOW_MEMORY=1 to load only XGBoost models, skip RF + legacy + ADMET
+LOW_MEMORY = os.environ.get("LOW_MEMORY", "0").strip().lower() in ("1", "true", "yes")
+
 # ─── Logging ───
 logging.basicConfig(
     level=logging.INFO,
@@ -183,6 +187,9 @@ def load_qspr_models():
     available = serializer.list_models()
     logger.info(f"QSPR models available: {available}")
 
+    if LOW_MEMORY:
+        logger.info("LOW_MEMORY mode: loading XGBoost-only (skipping RandomForest)")
+
     for prop_name, config in DATASET_CONFIGS.items():
         task = config["task"]
 
@@ -199,8 +206,8 @@ def load_qspr_models():
 
             models_loaded = 0
 
-            # Load RandomForest
-            if "random_forest" in available.get(prop_name, []):
+            # Load RandomForest (skip in LOW_MEMORY — each RF is 50-200 MB in RAM)
+            if not LOW_MEMORY and "random_forest" in available.get(prop_name, []):
                 rf_data = serializer.load_model(prop_name, "random_forest")
                 rf_model = RandomForestQSPR(task=task)
                 rf_model.model = rf_data["model"]
@@ -213,7 +220,7 @@ def load_qspr_models():
                 )
                 models_loaded += 1
 
-            # Load XGBoost
+            # Load XGBoost (always — lightweight, ~1 MB per model)
             if "xgboost" in available.get(prop_name, []):
                 xgb_data = serializer.load_model(prop_name, "xgboost")
                 xgb_model = XGBoostQSPR(task=task)
@@ -221,10 +228,9 @@ def load_qspr_models():
                 xgb_model.scaler = xgb_data["scaler"]
                 xgb_model._feature_names = xgb_data.get("feature_names")
                 xgb_model.is_fitted = True
-                ensemble.add_model(
-                    "xgboost", xgb_model,
-                    weight=weights.get("xgboost", 0.6),
-                )
+                # In LOW_MEMORY mode XGBoost is the sole model, give it full weight
+                w = 1.0 if LOW_MEMORY else weights.get("xgboost", 0.6)
+                ensemble.add_model("xgboost", xgb_model, weight=w)
                 models_loaded += 1
 
             if models_loaded > 0:
@@ -239,8 +245,11 @@ def load_qspr_models():
         except Exception as e:
             logger.error(f"  ✗ Failed to load QSPR models for {prop_name}: {e}")
 
-    # Load legacy models as fallback
-    _load_legacy_models()
+    # Load legacy models as fallback (skip in LOW_MEMORY — redundant with QSPR v2)
+    if not LOW_MEMORY:
+        _load_legacy_models()
+    else:
+        logger.info("LOW_MEMORY mode: skipping legacy model loading")
 
     _server_ready = True
     logger.info(
@@ -1816,7 +1825,12 @@ def _initialize():
     logger.info("=" * 60)
 
     load_qspr_models()
-    load_admet_models()
+
+    # ADMET v4 is heavy — skip in LOW_MEMORY to stay under 512 MB
+    if LOW_MEMORY:
+        logger.info("LOW_MEMORY mode: skipping ADMET v4 loading (use /predict instead)")
+    else:
+        load_admet_models()
 
     if not ensembles and not legacy_models:
         logger.warning(

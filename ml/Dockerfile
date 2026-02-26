@@ -46,6 +46,8 @@ ENV PORT=10000
 ENV PYTHONUNBUFFERED=1
 # Prevent Python from caching bytecode (saves disk/memory)
 ENV PYTHONDONTWRITEBYTECODE=1
+# Only load XGBoost models, skip RandomForest + legacy + ADMET
+ENV LOW_MEMORY=1
 # Aggressive glibc malloc trimming — returns freed memory to OS faster
 ENV MALLOC_TRIM_THRESHOLD_=65536
 ENV MALLOC_MMAP_THRESHOLD_=65536

@@ -19,6 +19,8 @@ services:
     envVars:
       - key: PORT
         value: "10000"
+      - key: LOW_MEMORY
+        value: "1"                    # XGBoost-only mode (skip RF + ADMET)
       - key: GROQ_API_KEY
         sync: false                   # manually set in Render dashboard
       - key: RIVA_API_KEY
