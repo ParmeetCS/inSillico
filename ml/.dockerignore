@@ -18,3 +18,15 @@ server_v1_legacy.py
 # Documentation
 *.md
 LICENSE
+
+# Dev dependencies
+requirements.txt
+
+# Jupyter / IDE
+*.ipynb
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db

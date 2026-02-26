@@ -3,27 +3,28 @@
 # ═══════════════════════════════════════════════════════════════
 #  Only packages needed to SERVE predictions.
 #  Excludes training-only deps (optuna, scipy, networkx).
+#  Pinned to keep image small for Render 512 MB free-tier.
 # ═══════════════════════════════════════════════════════════════
 
-# ── Web Framework ──
-flask>=3.0
-flask-cors>=4.0
+# ── Web Framework (~1 MB) ──
+flask>=3.0,<4
+flask-cors>=4.0,<5
 
-# ── Chemistry ──
+# ── Chemistry (~60 MB) ──
 rdkit                  # SMILES parsing, Morgan FP, molecular descriptors
 
-# ── ML Models ──
-xgboost>=2.0           # Gradient boosted trees
-scikit-learn>=1.4      # RandomForest, StandardScaler, metrics
+# ── ML Models (~80 MB combined) ──
+xgboost>=2.0,<3        # Gradient boosted trees
+scikit-learn>=1.4,<2    # RandomForest, StandardScaler, metrics
 
 # ── Data ──
-pandas>=2.1
-numpy>=1.26
-joblib>=1.3
+pandas>=2.1,<3
+numpy>=1.26,<2
+joblib>=1.3,<2
 
 # ── Environment ──
-python-dotenv>=1.0     # Load .env.local for API keys
+python-dotenv>=1.0,<2   # Load .env.local for API keys
 
 # ── PersonaPlex Voice AI ──
-requests>=2.31         # Cerebras AI HTTP client
-edge-tts>=7.0          # Microsoft Edge Neural TTS
+requests>=2.31,<3       # Cerebras AI HTTP client
+edge-tts>=7.0,<8        # Microsoft Edge Neural TTS
