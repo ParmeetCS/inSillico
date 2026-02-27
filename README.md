@@ -1097,18 +1097,6 @@ docker run -p 10000:10000 --env-file ../.env.local -e LOW_MEMORY=1 insilico-ml
 | `npm run start` | Start production server |
 | `npm run lint` | Run ESLint |
 
----
-
-## 👥 Team
-
-<!-- Update with your hackathon team details -->
-
-| Names | 
-|------|
-| Parmeet Singh |
-| Chetan Sharma |
-| Niharika Khosla |
-| Muskan Bindal |
 
 ---
 
