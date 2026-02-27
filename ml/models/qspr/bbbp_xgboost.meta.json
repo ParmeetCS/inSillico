@@ -3,24 +3,24 @@
   "model_name": "xgboost",
   "model_class": "XGBoostQSPR",
   "task": "classification",
-  "model_version": "3.0.0",
-  "descriptor_version": "ecfp4_2048_v3",
-  "trained_at": "2026-02-19 16:14:22 UTC",
+  "model_version": "4.0.0",
+  "descriptor_version": "ecfp4_4096_maccs_v4",
+  "trained_at": "2026-02-27 15:58:04 UTC",
   "metrics": {
-    "accuracy": 0.835,
-    "f1": 0.9091,
-    "precision": 0.8376,
-    "recall": 0.994,
-    "roc_auc": 0.8086,
-    "optimal_threshold": 0.15,
+    "accuracy": 0.8375,
+    "f1": 0.9106,
+    "precision": 0.838,
+    "recall": 0.997,
+    "roc_auc": 0.8337,
+    "optimal_threshold": 0.17,
     "confusion_matrix": [
       [
         4,
         64
       ],
       [
-        2,
-        330
+        1,
+        331
       ]
     ]
   },
@@ -34,18 +34,20 @@
     "class_balance": 0.3157894736842105
   },
   "hyperparameters": {
-    "n_estimators": 500,
-    "max_depth": 7,
-    "learning_rate": 0.03,
-    "subsample": 0.85,
-    "colsample_bytree": 0.75,
-    "min_child_weight": 3,
-    "gamma": 0.1,
-    "reg_alpha": 0.05,
-    "reg_lambda": 1.5,
+    "n_estimators": 2000,
+    "max_depth": 8,
+    "learning_rate": 0.015,
+    "subsample": 0.8,
+    "colsample_bytree": 0.6,
+    "colsample_bylevel": 0.7,
+    "min_child_weight": 5,
+    "gamma": 0.2,
+    "reg_alpha": 0.1,
+    "reg_lambda": 2.0,
+    "max_delta_step": 1,
     "random_state": 42,
     "verbosity": 0,
     "n_jobs": -1
   },
-  "n_features": 2062
+  "n_features": 4283
 }

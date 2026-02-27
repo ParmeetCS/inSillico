@@ -1,30 +1,30 @@
 {
   "property": "bbbp",
   "type": "WeightedEnsemble",
-  "model_version": "3.0.0",
+  "model_version": "4.0.0",
   "weights": {
-    "random_forest": 0.4864401397268974,
-    "xgboost": 0.5135598602731025
+    "random_forest": 0.4988880206768047,
+    "xgboost": 0.5011119793231953
   },
   "metrics": {
     "accuracy": 0.835,
-    "f1": 0.9091,
-    "precision": 0.8376,
-    "recall": 0.994,
-    "roc_auc": 0.7995,
-    "optimal_threshold": 0.3,
+    "f1": 0.9096,
+    "precision": 0.8342,
+    "recall": 1.0,
+    "roc_auc": 0.8385,
+    "optimal_threshold": 0.09,
     "confusion_matrix": [
       [
-        4,
-        64
+        2,
+        66
       ],
       [
-        2,
-        330
+        0,
+        332
       ]
     ],
-    "mean_uncertainty": 0.04739143342859364,
-    "mean_confidence": 0.785031880026061
+    "mean_uncertainty": 0.04215967877901486,
+    "mean_confidence": 0.7738163381438806
   },
-  "saved_at": "2026-02-19 16:14:22 UTC"
+  "saved_at": "2026-02-27 15:58:04 UTC"
 }

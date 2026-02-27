@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from qspr.config import (
     DATASET_CONFIGS, MODEL_DIR, CV_FOLDS,
     DEFAULT_RF_PARAMS, DEFAULT_XGB_PARAMS,
+    USE_SMOTE, SMOTE_SAMPLING_STRATEGY,
 )
 from qspr.datasets import QSPRDataset
 from qspr.fingerprints import MorganFingerprintCalculator
@@ -139,6 +140,30 @@ def train_property(
         unique, counts = np.unique(y_train, return_counts=True)
         logger.info(f"  Train class distribution: {dict(zip(unique.astype(int), counts))}")
 
+        # SMOTE oversampling for imbalanced datasets
+        if USE_SMOTE:
+            minority_ratio = min(counts) / max(counts)
+            if minority_ratio < 0.25:
+                try:
+                    from imblearn.over_sampling import SMOTE
+                    smote = SMOTE(
+                        sampling_strategy=SMOTE_SAMPLING_STRATEGY,
+                        random_state=42,
+                        k_neighbors=min(5, min(counts) - 1),
+                    )
+                    X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
+                    unique_r, counts_r = np.unique(y_train_resampled, return_counts=True)
+                    logger.info(
+                        f"  SMOTE applied: {len(y_train)} → {len(y_train_resampled)} samples "
+                        f"(new dist: {dict(zip(unique_r.astype(int), counts_r))})"
+                    )
+                    X_train = X_train_resampled
+                    y_train = y_train_resampled
+                except ImportError:
+                    logger.warning("  imbalanced-learn not installed, skipping SMOTE")
+                except Exception as e:
+                    logger.warning(f"  SMOTE failed: {e}, continuing without oversampling")
+
     feature_names = fp_calculator.feature_names
 
     # ── 4. Hyperparameter tuning (optional) ──
@@ -163,9 +188,10 @@ def train_property(
     rf_model = RandomForestQSPR(task=task, params=rf_params)
     rf_model.fit(X_train, y_train, feature_names=feature_names)
 
-    logger.info("  Training XGBoost...")
+    logger.info("  Training XGBoost (with early stopping)...")
     xgb_model = XGBoostQSPR(task=task, params=xgb_params)
-    xgb_model.fit(X_train, y_train, feature_names=feature_names)
+    # Pass test data as validation for early stopping
+    xgb_model.fit(X_train, y_train, feature_names=feature_names, X_val=X_test, y_val=y_test)
 
     # ── 6. Evaluate individual models ──
     evaluator = QSPREvaluator(task=task)
@@ -300,12 +326,12 @@ def main():
 
     # Banner
     print("=" * 70)
-    print("  InSilico QSPR Training Pipeline v2.0")
-    print("  Descriptors: Morgan Fingerprints (ECFP4, 2048 bits)")
-    print("  Models: RandomForest + XGBoost Ensemble")
+    print("  InSilico QSPR Training Pipeline v4.0")
+    print("  Descriptors: Morgan FP (ECFP4, 4096 bits) + MACCS keys + 20 PhysChem")
+    print("  Models: RandomForest + XGBoost Ensemble (with early stopping)")
     print("  Validation: Scaffold-Based Split + 5-Fold Scaffold CV")
     if args.tune:
-        print("  Optimization: Optuna Bayesian HPO")
+        print("  Optimization: Optuna Bayesian HPO (80 trials)")
     print("=" * 70)
 
     os.makedirs(MODEL_DIR, exist_ok=True)

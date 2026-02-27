@@ -466,12 +466,12 @@ def list_models():
         "properties": properties_info,
         "engine": {
             "version": MODEL_VERSION,
-            "descriptor": "Morgan Fingerprints (ECFP4, 2048 bits) + Physicochemical",
-            "models": "RandomForest + XGBoost Ensemble",
-            "validation": "Scaffold-based split",
+            "descriptor": "Morgan FP (ECFP4, 4096 bits) + MACCS Keys + 20 PhysChem Descriptors",
+            "models": "RandomForest + XGBoost Ensemble (with early stopping)",
+            "validation": "Scaffold-based split + 5-fold scaffold CV",
         },
         "datasets_used": "MoleculeNet (ESOL, Lipophilicity, BBBP, ClinTox)",
-        "descriptor_engine": "RDKit + Morgan FP",
+        "descriptor_engine": "RDKit + Morgan FP + MACCS Keys",
     })
 
 

@@ -61,14 +61,13 @@ class OptunaTuner:
         Optimize RandomForest hyperparameters.
 
         Search space (scientifically motivated):
-          - n_estimators: [200, 1000] — More trees reduce variance;
-            diminishing returns past ~500 for molecular datasets.
-          - max_depth: [5, 30] or None — Deep trees for complex SAR;
+          - n_estimators: [500, 2000] — More trees reduce variance;
+            diminishing returns past ~1500 for molecular datasets.
+          - max_depth: [10, 40] or None — Deep trees for complex SAR;
             None lets trees grow until pure leaves.
           - min_samples_split: [2, 20] — Controls overfitting.
           - min_samples_leaf: [1, 10] — Minimum leaf size for smoothing.
-          - max_features: ["sqrt", "log2", 0.3..0.8] — Feature subsampling
-            for decorrelation between trees.
+          - max_features: [0.1..0.5] — Fraction for high-dim FP vectors.
 
         Returns:
             Best hyperparameters dict
@@ -86,11 +85,13 @@ class OptunaTuner:
 
         def objective(trial):
             params = {
-                "n_estimators": trial.suggest_int("n_estimators", 200, 1000, step=100),
-                "max_depth": trial.suggest_int("max_depth", 5, 30) if trial.suggest_categorical("use_max_depth", [True, False]) else None,
+                "n_estimators": trial.suggest_int("n_estimators", 500, 2000, step=100),
+                "max_depth": trial.suggest_int("max_depth", 10, 40) if trial.suggest_categorical("use_max_depth", [True, False]) else None,
                 "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
                 "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
-                "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
+                "max_features": trial.suggest_float("max_features", 0.1, 0.5),
+                "bootstrap": True,
+                "oob_score": True,
                 "n_jobs": -1,
                 "random_state": 42,
             }
@@ -172,14 +173,17 @@ class OptunaTuner:
 
         def objective(trial):
             params = {
-                "n_estimators": trial.suggest_int("n_estimators", 100, 500, step=50),
-                "max_depth": trial.suggest_int("max_depth", 3, 10),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "n_estimators": trial.suggest_int("n_estimators", 500, 2500, step=100),
+                "max_depth": trial.suggest_int("max_depth", 4, 12),
+                "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.2, log=True),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
-                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.3, 0.8),
+                "colsample_bylevel": trial.suggest_float("colsample_bylevel", 0.5, 1.0),
                 "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
                 "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
                 "gamma": trial.suggest_float("gamma", 0, 5.0),
+                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+                "max_delta_step": trial.suggest_int("max_delta_step", 0, 3),
                 "random_state": 42,
                 "verbosity": 0,
                 "n_jobs": -1,

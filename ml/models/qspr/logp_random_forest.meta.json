@@ -3,13 +3,13 @@
   "model_name": "random_forest",
   "model_class": "RandomForestQSPR",
   "task": "regression",
-  "model_version": "3.0.0",
-  "descriptor_version": "ecfp4_2048_v3",
-  "trained_at": "2026-02-19 16:13:19 UTC",
+  "model_version": "4.0.0",
+  "descriptor_version": "ecfp4_4096_maccs_v4",
+  "trained_at": "2026-02-27 15:53:41 UTC",
   "metrics": {
-    "r2": 0.3975,
-    "rmse": 1.0399,
-    "mae": 0.8248
+    "r2": 0.6332,
+    "rmse": 0.8114,
+    "mae": 0.6445
   },
   "dataset_stats": {
     "n_samples": 4200,
@@ -21,14 +21,16 @@
     "target_median": 2.36
   },
   "hyperparameters": {
-    "n_estimators": 800,
-    "max_depth": null,
-    "min_samples_split": 3,
-    "min_samples_leaf": 1,
-    "max_features": "sqrt",
+    "n_estimators": 1500,
+    "max_depth": 25,
+    "min_samples_split": 4,
+    "min_samples_leaf": 2,
+    "max_features": 0.3,
     "class_weight": "balanced",
+    "bootstrap": true,
+    "oob_score": true,
     "n_jobs": -1,
     "random_state": 42
   },
-  "n_features": 2062
+  "n_features": 4283
 }

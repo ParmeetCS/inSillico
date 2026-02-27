@@ -37,9 +37,10 @@ logger = logging.getLogger("qspr.ensemble")
 # These per-property scales keep confidence meaningful for single
 # molecules.  Scales are deliberately generous (2× RMSE) so that
 # typical predictions land in the 0.4–0.9 confidence range.
+# v4: Retuned scales based on v4 model expected RMSE.
 _UNCERTAINTY_REF_SCALES: Dict[str, float] = {
-    "logp": 2.0,       # training RMSE ≈ 0.95
-    "solubility": 2.0,  # training RMSE ≈ 0.92
+    "logp": 1.6,        # v4 target RMSE ≈ 0.70
+    "solubility": 1.6,  # v4 target RMSE ≈ 0.65
     "bbbp": 1.0,        # classification, scale on probability
     "toxicity": 1.0,    # classification, scale on probability
 }
