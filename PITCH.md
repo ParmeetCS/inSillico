@@ -24,7 +24,7 @@ A researcher can:
 2. **Get instant ML predictions** for 6+ physicochemical properties
 3. **Visualize the molecule in 3D** with interactive rotation, conformer animation, and thermal simulation
 4. **Simulate chemical reactions** with animated bond formation/breaking in Three.js
-5. **Talk to an AI copilot** that reasons like a senior medicinal chemist — via text or voice
+5. **Talk to AI Assistance** that reasons like a senior medicinal chemist — via text or voice
 6. **Export professional PDF reports** for publication or sharing
 
 All from a single SMILES string. In under 30 seconds.
@@ -102,7 +102,7 @@ Fallback: Client-side `smiles-to-3d.ts` uses force-directed graph layout when ML
 
 ---
 
-### 3. 🤖 AI Copilot — Context-Aware Drug Discovery Assistant
+### 3. 🤖 AI Assistance — Context-Aware Drug Discovery Assistant
 
 **What it does:** A conversational AI that thinks like a medicinal chemist.
 
@@ -205,7 +205,7 @@ All methods auto-populate: SMILES string, molecular formula, and molecular weigh
 ┌─────────────────────────────────────────────────────────┐
 │  FRONTEND (Next.js 16 + React 19 + TypeScript)          │
 │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐  │
-│  │ Landing  │ │ Dashboard│ │ Copilot  │ │ Reaction   │  │
+│  │ Landing  │ │ Dashboard│ │ AI Assist│ │ Reaction   │  │
 │  │ Page     │ │          │ │ Chat     │ │ Lab (3JS)  │  │
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬──────┘  │
 │       └─────────────┴────────────┴─────────────┘         │
@@ -252,7 +252,7 @@ All methods auto-populate: SMILES string, molecular formula, and molecular weigh
 |---|---|---|
 | **Cost** | **Free & open source** | $10K–$100K/year |
 | **Setup** | **2 minutes** | Days to weeks |
-| **AI Assistant** | Context-aware copilot + voice | ❌ None |
+| **AI Assistant** | Context-aware AI Assistance + voice | ❌ None |
 | **3D Engine** | Custom Three.js (reactions, conformers, vibration, recording) | Static images |
 | **Voice** | PersonaPlex (speak to predict) | ❌ None |
 | **ML Predictions** | Ensemble (RF + XGB) with confidence scores | Single-model, no confidence |
@@ -297,8 +297,8 @@ All methods auto-populate: SMILES string, molecular formula, and molecular weigh
 4. Slide **Temperature** to 3000 K → See thermal vibration
 5. Click **Record** → Download WebM video
 
-### Path 3: AI Copilot (30 seconds)
-1. Navigate to **Copilot** page
+### Path 3: AI Assistance (30 seconds)
+1. Navigate to **AI Assistance** page
 2. Type: *"Compare Aspirin and Caffeine for drug-likeness"*
 3. Watch AI call prediction tools and return formatted analysis
 4. Click the **voice orb** → Speak: *"What is Ibuprofen's solubility?"*

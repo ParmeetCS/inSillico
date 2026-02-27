@@ -36,7 +36,7 @@
   <img src="https://img.shields.io/badge/ChEMBL_34-Target_Prediction-2563eb" />
   <img src="https://img.shields.io/badge/STRING_DB-PPI_Network-8b5cf6" />
   <img src="https://img.shields.io/badge/Open_Targets-Disease_Mapping-ef4444" />
-  <img src="https://img.shields.io/badge/Groq-AI_Copilot-f55036" />
+  <img src="https://img.shields.io/badge/Groq-AI_Assistance-f55036" />
   <img src="https://img.shields.io/badge/PersonaPlex-Voice_AI-22c55e" />
 </p>
 
@@ -46,7 +46,7 @@
 
 Drug discovery is one of the slowest, most expensive pipelines in healthcare — taking **10–15 years** and costing **$2.6 billion+** per approved drug. Early-stage researchers lack access to fast, intelligent tools that can predict molecular properties, flag ADMET risks, and suggest lead optimizations — all in one place.
 
-**InSilico Formulator** solves this by putting an AI-powered drug formulation lab directly in the browser — combining ML-based property prediction, interactive 3D molecular visualization, a reaction animation engine, and a context-aware AI copilot that reasons like a senior medicinal chemist.
+**InSilico Formulator** solves this by putting an AI-powered drug formulation lab directly in the browser — combining ML-based property prediction, interactive 3D molecular visualization, a reaction animation engine, and a context-aware AI Assistance that reasons like a senior medicinal chemist.
 
 ---
 
@@ -104,7 +104,7 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 - Compare multiple compounds across all predicted properties
 - **Live dataset lookup** — query experimentally measured values by SMILES or compound name across 8,862 training compounds
 
-### 🤖 AI Copilot
+### 🤖 AI Assistance
 - Conversational AI assistant with deep **medicinal chemistry, ADMET, SAR, and PK/PD** expertise
 - **Context-aware** — automatically ingests your compound library, simulations & prediction results via RAG context builder
 - **Function calling**: runs live predictions, compares molecules, and queries QSPR datasets mid-conversation
@@ -279,7 +279,7 @@ Each step card transitions through `waiting → running → complete` with:
 ┌──────────────────────────────────────────────────────────────────────┐
 │                           BROWSER                                    │
 │  ┌───────────┐  ┌───────────┐  ┌────────────┐  ┌────────────────┐  │
-│  │ Molecule   │  │ Simulation│  │ AI Copilot  │  │ PersonaPlex    │  │
+│  │ Molecule   │  │ Simulation│  │ AI Assist.  │  │ PersonaPlex    │  │
 │  │ Input      │  │ Config    │  │ Chat (Groq) │  │ Voice Orb      │  │
 │  │ (SMILES /  │  │ (Props,   │  │ (Function   │  │ ASR → AI → TTS │  │
 │  │  Draw /    │  │  Solvent, │  │  Calling)   │  │ Edge TTS /     │  │
@@ -407,7 +407,7 @@ GROQ_MODEL=openai/gpt-oss-120b         # default model
 ML_BACKEND_URL=http://localhost:5001   # Flask ML server URL
 NEXT_PUBLIC_ML_BACKEND_URL=http://localhost:5001
 
-# (Optional) AI Copilot fallback — OpenRouter API Key
+# (Optional) AI Assistance fallback — OpenRouter API Key
 GEMINI_API_KEY=your-openrouter-api-key
 
 # (Optional) NVIDIA Riva — enterprise ASR/TTS
@@ -521,7 +521,7 @@ Navigate to `/drug-intelligence` to analyze **compound drugs** — input a multi
 | `POST` | `/api/predict/compare` | Ensemble vs legacy side-by-side comparison |
 | `POST` | `/api/predict/save` | Persist results to Supabase |
 | `POST` | `/api/descriptors` | Proxy to ML descriptors endpoint (mock fallback) |
-| `POST` | `/api/copilot` | AI chat with context-aware function calling |
+| `POST` | `/api/copilot` | AI Assistance chat with context-aware function calling |
 | `POST` | `/api/copilot/summary` | Short 2–3 sentence compound analysis |
 | `POST` | `/api/network-pharmacology` | Proxy to NP endpoints (action: `full` / `targets` / `ppi` / `pathways` / `diseases`; 120s timeout; mock fallback) |
 
@@ -792,12 +792,12 @@ inSillico/
 │   │   │   │   ├── compare/        #   Ensemble vs legacy comparison
 │   │   │   │   └── save/           #   Persist results to Supabase
 │   │   │   ├── descriptors/        # Molecular descriptor proxy (mock fallback)
-│   │   │   ├── copilot/            # AI assistant endpoints
+│   │   │   ├── copilot/            # AI Assistance endpoints
 │   │   │   │   ├── route.ts        #   Chat with function calling
 │   │   │   │   └── summary/        #   Quick compound analysis
 │   │   │   └── network-pharmacology/ # 🕸️ NP proxy (action routing, 120s timeout, mock fallback)
 │   │   ├── auth/                   # Login & Signup pages
-│   │   ├── copilot/                # AI Chat interface
+│   │   ├── copilot/                # AI Assistance interface
 │   │   ├── dashboard/              # User dashboard with metrics
 │   │   ├── drug-intelligence/      # 💊 Compound Drug Analysis Pipeline
 │   │   ├── molecules/new/          # 3-step molecule input wizard
@@ -1039,7 +1039,7 @@ docker run -p 10000:10000 --env-file ../.env.local -e LOW_MEMORY=1 insilico-ml
 |---------|--------------------|--------------------| 
 | **Setup time** | 2 minutes | Days to weeks |
 | **Cost** | Free & open source | $10K–$100K/yr licenses |
-| **AI Assistant** | Context-aware copilot with function calling + voice | None |
+| **AI Assistant** | Context-aware AI Assistance with function calling + voice | None |
 | **ML Engine** | ADMET v4.0 (ECFP6, 2094 features, domain-aware) + QSPR v4.0 (ECFP4 4096-bit + MACCS keys, 4283 features) | Single model |
 | **Network Pharmacology** | Full pipeline: ChEMBL → STRING → Reactome/KEGG → Open Targets with animated stepper | Manual multi-tool workflow |
 | **Drug Intelligence** | Compound drug decomposition + parallel per-molecule analysis | Manual compound separation |

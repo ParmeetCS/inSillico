@@ -807,7 +807,7 @@ export default function ResultsIndexPage() {
                                         </div>
                                     </div>
 
-                                    {/* ─── AI Copilot Summary ─── */}
+                                    {/* ─── AI Assistance Summary ─── */}
                                     <div style={{
                                         borderTop: "1px solid var(--glass-border)",
                                         padding: "14px 24px",

@@ -968,7 +968,7 @@ export default function CopilotPage() {
                         opacity: 0.7,
                     }}
                 >
-                    InSilico Copilot can make mistakes. Always verify critical pharmaceutical data independently.
+                    InSilico AI Assistance can make mistakes. Always verify critical pharmaceutical data independently.
                 </p>
             </div>
         </div>

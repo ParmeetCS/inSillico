@@ -34,7 +34,7 @@ const navLinks = [
     { href: "/network-pharmacology", label: "Network Pharma", icon: Share2 },
     { href: "/simulations", label: "Simulations", icon: Activity },
     { href: "/results", label: "Results", icon: FileBarChart },
-    { href: "/copilot", label: "AI Copilot", icon: Sparkles },
+    { href: "/copilot", label: "AI Assistance", icon: Sparkles },
 ];
 
 export function Navbar() {
