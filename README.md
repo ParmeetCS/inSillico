@@ -30,7 +30,7 @@
   <img src="https://img.shields.io/badge/Three.js-3D_Engine-000000?logo=threedotjs" />
   <img src="https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-3ecf8e?logo=supabase" />
   <img src="https://img.shields.io/badge/Python-ML%20Backend-3776ab?logo=python" />
-  <img src="https://img.shields.io/badge/QSPR-v2.0_Ensemble-ff6600" />
+  <img src="https://img.shields.io/badge/QSPR-v4.0_Ensemble-ff6600" />
   <img src="https://img.shields.io/badge/ADMET-v4.0_Domain--Aware-e11d48" />
   <img src="https://img.shields.io/badge/RDKit-ECFP6_2094-005571" />
   <img src="https://img.shields.io/badge/ChEMBL_34-Target_Prediction-2563eb" />
@@ -52,9 +52,9 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 
 ## ✨ Features
 
-### 🔬 Molecular Property Prediction (QSPR v2.0 + ADMET v4.0)
+### 🔬 Molecular Property Prediction (QSPR v4.0 + ADMET v4.0)
 - Predict **Aqueous Solubility (logS)**, **Lipophilicity (logD)**, **Blood-Brain Barrier Penetration**, and **Clinical Toxicity** from any SMILES input
-- **QSPR v2.0 Ensemble Engine**: **RandomForest + XGBoost** with Optuna-tuned hyperparameters, trained on MoleculeNet benchmarks (ESOL, Lipophilicity, BBBP, ClinTox)
+- **QSPR v4.0 Ensemble Engine**: **RandomForest (1500 trees) + XGBoost (2000 rounds, early stopping)** with Optuna-tuned hyperparameters, **4283-dimensional features** (ECFP4 4096-bit + MACCS keys + 20 physicochemical descriptors), SMOTE oversampling for imbalanced datasets, trained on MoleculeNet benchmarks (ESOL, Lipophilicity, BBBP, ClinTox)
 - **ADMET v4.0 Domain-Aware Prediction System** — 17 ADMET endpoints with applicability domain awareness, prodrug detection, and metabolism-informed bioavailability:
   - **2094-dimensional hybrid features**: ECFP6 (radius 3, 2048 bits) + 26 physicochemical + 8 topological + 12 functional group descriptors
   - **Applicability domain**: 5-method composite (Tanimoto 30%, Mahalanobis 25%, Isolation Forest 20%, PCA 15%, Leverage 10%) — flags out-of-domain molecules with calibrated uncertainty inflation
@@ -321,7 +321,7 @@ Each step card transitions through `waiting → running → complete` with:
    │  │ Ensemble Routing   │  │
    │  └───────────────────┘  │
    │  ┌───────────────────┐  │
-   │  │ QSPR v2.0 (legacy) │  │
+   │  │ QSPR v4.0 ensemble  │  │
    │  │ RF + XGB (8 models)│  │
    │  │ + 4 legacy DT      │  │
    │  └───────────────────┘  │
@@ -599,13 +599,13 @@ curl -X POST http://localhost:5001/network/full-analysis \
 
 ## 🧠 ML Models
 
-### QSPR Engine v2.0
+### QSPR Engine v4.0
 
-The prediction engine uses a **weighted ensemble** of RandomForest and XGBoost, with weights determined by cross-validation performance. Legacy Decision Tree + XGBoost v1 models are available as fallbacks.
+The prediction engine uses a **weighted ensemble** of RandomForest (1500 trees) and XGBoost (up to 2000 rounds with early stopping), with weights determined by cross-validation performance. Features include **4283-dimensional molecular descriptors** (ECFP4 4096-bit Morgan FP + 167 MACCS keys + 20 physicochemical descriptors), scaffold-based splitting for realistic evaluation, and SMOTE oversampling for imbalanced classification tasks. Legacy Decision Tree + XGBoost v1 models are available as fallbacks.
 
 ### ADMET Engine v4.0 (Domain-Aware)
 
-A comprehensive **domain-aware ADMET prediction system** that overcomes failures in high MW compounds, nucleoside analogues, phosphoramidate prodrugs, and large antivirals. Runs alongside QSPR v2 with full backward compatibility.
+A comprehensive **domain-aware ADMET prediction system** that overcomes failures in high MW compounds, nucleoside analogues, phosphoramidate prodrugs, and large antivirals. Runs alongside QSPR v4 with full backward compatibility.
 
 #### ADMET Endpoints (17 total)
 
@@ -662,22 +662,25 @@ A comprehensive **domain-aware ADMET prediction system** that overcomes failures
 | **BBBP** | Classification | 2,050 | Blood-Brain Barrier Penetration | binary |
 | **ClinTox** | Classification | 1,484 | Clinical Toxicity | binary |
 
-### QSPR v2 Feature Engineering (2,056 dimensions)
+### QSPR v4 Feature Engineering (4,283 dimensions)
 
 | Feature Type | Count | Details |
-|-------------|-------|---------| 
-| **Morgan Fingerprints (ECFP4)** | 2,048 | Radius 2, captures substructural fragments of diameter 4 |
-| **Physicochemical Descriptors** | 8 | MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3 |
+|-------------|-------|---------|
+| **Morgan Fingerprints (ECFP4)** | 4,096 | Radius 2 with `useFeatures=True`, captures pharmacophoric substructural fragments |
+| **MACCS Keys** | 167 | Standard 166-bit MACCS structural keys for global structural patterns |
+| **Physicochemical Descriptors** | 20 | MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3, HeavyAtomCount, RingCount, NumHeteroatoms, BertzCT, Chi0n, HallKierAlpha, LabuteASA, PEOE_VSA1, SlogP_VSA1, NumAliphaticRings, NumSaturatedRings, NumAromaticHeterocycles |
 
-### QSPR v2 Model Architecture
+### QSPR v4 Model Architecture
 
 | Component | Configuration |
 |-----------|---------------|
-| **RandomForest** | 500 estimators, sqrt features, min_samples_split=5 |
-| **XGBoost** | 300 estimators, max_depth=6, lr=0.05, subsample=0.8 |
-| **Ensemble** | Weighted average (weights from CV performance, ~40/60 RF/XGB) |
-| **Tuning** | Optuna Bayesian optimization (50 trials, 5-fold CV) |
+| **RandomForest** | 1,500 estimators, sqrt features, min_samples_split=5, class_weight=balanced_subsample |
+| **XGBoost** | 2,000 max estimators, max_depth=7, lr=0.015, subsample=0.85, early stopping (50 rounds patience) |
+| **Ensemble** | Weighted average (weights from CV performance, ~47–50/50–53 RF/XGB) |
+| **SMOTE** | Synthetic minority oversampling for imbalanced classification (minority_ratio < 0.25) |
+| **Tuning** | Optuna Bayesian optimization (80 trials, 5-fold scaffold CV) |
 | **Splitting** | Scaffold split (Bemis-Murcko) for realistic generalization |
+| **Uncertainty** | Staged boosting-round variance (25%, 50%, 75%, 100% checkpoints) with calibrated confidence floors |
 
 ### Prediction Accuracy & Confidence Calibration
 
@@ -699,16 +702,25 @@ where $w = 0.2 + 0.5 \cdot \text{confidence}_{\text{QSPR}}$. At high QSPR confid
 #### Benchmark Results
 
 | Compound | LogP (Predicted) | LogP (Experimental) | Confidence | Drug-Likeness |
-|----------|-----------------|--------------------|-----------|--------------| 
+|----------|-----------------|--------------------|-----------|--------------|
 | **Aspirin** | 0.88 | 1.19 | 73.5% | A (82.0) |
 | **Caffeine** | −0.30 | −0.07 | 83.3% | A (82.0) |
 | **Ibuprofen** | 2.54 | 3.97 | 73.2% | A (82.0) |
+
+#### QSPR v4 Model Performance (Scaffold Split)
+
+| Property | Task | Best Model | Test Score | CV Score (5-fold) |
+|----------|------|-----------|------------|------------------|
+| **Solubility** | Regression | XGBoost | R² = 0.847 | R² = 0.827 ± 0.026 |
+| **LogP** | Regression | XGBoost | R² = 0.705 | R² = 0.684 ± 0.035 |
+| **BBBP** | Classification | XGBoost | AUC = 0.834 | AUC = 0.906 ± 0.020 |
+| **Toxicity** | Classification | XGBoost | AUC = 0.894 | AUC = 0.926 ± 0.013 |
 
 ### Model Files
 
 ```
 ml/models/
-├── qspr/                                    # QSPR v2.0 ensemble models
+├── qspr/                                    # QSPR v4.0 ensemble models
 │   ├── solubility_random_forest.joblib      ├── solubility_xgboost.joblib
 │   ├── logp_random_forest.joblib            ├── logp_xgboost.joblib
 │   ├── bbbp_random_forest.joblib            ├── bbbp_xgboost.joblib
@@ -748,11 +760,11 @@ python ml/train_admet.py --quick
 python ml/train_admet.py --endpoint logp
 python ml/train_admet.py --endpoints logp,bbbp,toxicity
 
-# ── QSPR v2.0 (legacy, still supported) ──
+# ── QSPR v4.0 ──
 
 # Full training with Optuna hyperparameter tuning
 npm run ml:train:tune
-# → Trains RF + XGB for all 4 properties with Bayesian optimization
+# → Trains RF + XGB for all 4 properties with Bayesian optimization (80 trials)
 
 # Standard training (default hyperparameters)
 npm run ml:train
@@ -851,7 +863,7 @@ inSillico/
 │   ├── server.py                   # Flask ML + Voice + 3D API (port 5001)
 │   ├── server_v1_legacy.py         # Legacy v1 server (deprecated)
 │   ├── descriptors.py              # RDKit ECFP4 + physicochemical engine
-│   ├── train_qspr.py              # QSPR v2.0 training pipeline
+│   ├── train_qspr.py              # QSPR v4.0 training pipeline
 │   ├── evaluate_qspr.py           # Model evaluation & metrics
 │   ├── train_models.py             # Legacy v1 training (deprecated)
 │   ├── download_moleculenet.py     # Dataset download utility
@@ -912,7 +924,7 @@ inSillico/
 │   │   ├── bbbp.csv               #   2,050 compounds (BBB penetration)
 │   │   └── clintox.csv            #   1,484 compounds (toxicity)
 │   └── models/                     # Pre-trained model files
-│       ├── qspr/                  #   QSPR v2.0 ensemble (.joblib + .meta.json)
+│       ├── qspr/                  #   QSPR v4.0 ensemble (.joblib + .meta.json)
 │       │   └── training_report.json #  Full training report
 │       ├── *.joblib               #   Legacy v1 models
 │       └── training_metadata.json #   Legacy training metadata
@@ -1028,7 +1040,7 @@ docker run -p 10000:10000 --env-file ../.env.local -e LOW_MEMORY=1 insilico-ml
 | **Setup time** | 2 minutes | Days to weeks |
 | **Cost** | Free & open source | $10K–$100K/yr licenses |
 | **AI Assistant** | Context-aware copilot with function calling + voice | None |
-| **ML Engine** | ADMET v4.0 (ECFP6, 2094 features, domain-aware) + QSPR v2.0 (ECFP4) | Single model |
+| **ML Engine** | ADMET v4.0 (ECFP6, 2094 features, domain-aware) + QSPR v4.0 (ECFP4 4096-bit + MACCS keys, 4283 features) | Single model |
 | **Network Pharmacology** | Full pipeline: ChEMBL → STRING → Reactome/KEGG → Open Targets with animated stepper | Manual multi-tool workflow |
 | **Drug Intelligence** | Compound drug decomposition + parallel per-molecule analysis | Manual compound separation |
 | **Target Prediction** | 3-tier real-data pipeline (ChEMBL API + Morgan FP + SMARTS) | Database lookup only |
@@ -1074,7 +1086,7 @@ docker run -p 10000:10000 --env-file ../.env.local -e LOW_MEMORY=1 insilico-ml
 | `npm run dev` | Next.js dev server only → http://localhost:3000 |
 | `npm run ml` | Python ML + Voice + 3D server only → http://localhost:5001 |
 | `npm run ml:legacy` | Legacy v1 server (deprecated) |
-| `npm run ml:train` | Train QSPR v2.0 models (default hyperparameters) |
+| `npm run ml:train` | Train QSPR v4.0 models (default hyperparameters) |
 | `npm run ml:train:tune` | Train with Optuna Bayesian hyperparameter tuning |
 | `npm run ml:train:quick` | Quick training (reduced trials, for testing) |
 | `npm run ml:evaluate` | Evaluate models — scaffold-split metrics |
