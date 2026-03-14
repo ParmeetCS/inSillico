@@ -41,18 +41,22 @@ const atomColors: Record<string, number> = {
     S: 0xfbbf24, // Yellow
     P: 0x8b5cf6, // Purple
     Cl: 0x10b981, // Green
+    Br: 0xa52a2a, // Brown
     F: 0x06b6d4, // Cyan
+    I: 0x6b21a8, // Dark purple
 };
 
 const atomRadii: Record<string, number> = {
-    H: 0.3,
-    C: 0.7,
-    N: 0.65,
-    O: 0.6,
-    S: 1.0,
-    P: 1.0,
+    H: 0.35,
+    C: 0.77,
+    N: 0.70,
+    O: 0.66,
+    S: 1.04,
+    P: 1.07,
     Cl: 0.99,
-    F: 0.5,
+    Br: 1.14,
+    F: 0.57,
+    I: 1.33,
 };
 
 export default function ReactionViewer({
@@ -81,18 +85,20 @@ export default function ReactionViewer({
         sceneRef.current = scene;
 
         // Camera setup
+        const w = containerRef.current.clientWidth || 1;
+        const h = containerRef.current.clientHeight || 1;
         const camera = new THREE.PerspectiveCamera(
-            75,
-            containerRef.current.clientWidth / containerRef.current.clientHeight,
+            60,
+            w / h,
             0.1,
             1000
         );
-        camera.position.z = 15;
+        camera.position.z = 10;
         cameraRef.current = camera;
 
         // Renderer setup
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+        renderer.setSize(w, h);
         renderer.setPixelRatio(window.devicePixelRatio);
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
@@ -155,7 +161,7 @@ export default function ReactionViewer({
         }
 
         // Position molecules
-        const spacing = 8;
+        const spacing = 6;
         const totalMolecules = reactants.length + (showTransition ? 1 : 0) + products.length;
         const startX = -(totalMolecules - 1) * spacing / 2;
 
@@ -193,17 +199,18 @@ export default function ReactionViewer({
         const interval = setInterval(() => {
             setProgress((prev) => {
                 const newProgress = prev + 0.5 * animationSpeed;
-                if (newProgress >= 100) {
-                    if (onProgressUpdate) onProgressUpdate(100);
-                    return 0;
-                }
-                if (onProgressUpdate) onProgressUpdate(newProgress);
+                if (newProgress >= 100) return 0;
                 return newProgress;
             });
         }, 50);
 
         return () => clearInterval(interval);
-    }, [isPlaying, animationSpeed, onProgressUpdate]);
+    }, [isPlaying, animationSpeed]);
+
+    // Notify parent of progress changes outside of render
+    useEffect(() => {
+        if (onProgressUpdate) onProgressUpdate(progress);
+    }, [progress, onProgressUpdate]);
 
     return (
         <div
@@ -310,59 +317,134 @@ function createTransitionState(): THREE.Group {
 
 // Helper function to parse simple SMILES and create basic molecule structure
 export function parseSMILESToMolecule(smiles: string, name: string): Molecule {
-    // This is a simplified parser - in production, use a proper chemistry library
     const atoms: Atom[] = [];
     const bonds: Bond[] = [];
 
-    // Simple pattern matching for common molecules
+    // --- Known molecules ---
     if (smiles === "[H][H]" || smiles === "HH") {
-        // Hydrogen molecule
         atoms.push(
-            { element: "H", position: new THREE.Vector3(-0.4, 0, 0), color: atomColors.H, radius: atomRadii.H },
-            { element: "H", position: new THREE.Vector3(0.4, 0, 0), color: atomColors.H, radius: atomRadii.H }
+            { element: "H", position: new THREE.Vector3(-0.5, 0, 0), color: atomColors.H, radius: atomRadii.H },
+            { element: "H", position: new THREE.Vector3(0.5, 0, 0), color: atomColors.H, radius: atomRadii.H }
         );
         bonds.push({ from: 0, to: 1, order: 1 });
-    } else if (smiles === "O=O") {
-        // Oxygen molecule
+        return { atoms, bonds, name };
+    }
+    if (smiles === "O=O") {
         atoms.push(
             { element: "O", position: new THREE.Vector3(-0.6, 0, 0), color: atomColors.O, radius: atomRadii.O },
             { element: "O", position: new THREE.Vector3(0.6, 0, 0), color: atomColors.O, radius: atomRadii.O }
         );
         bonds.push({ from: 0, to: 1, order: 2 });
-    } else if (smiles === "O" || smiles === "[H]O[H]") {
-        // Water molecule
+        return { atoms, bonds, name };
+    }
+    if (smiles === "O" || smiles === "[H]O[H]") {
         atoms.push(
             { element: "O", position: new THREE.Vector3(0, 0, 0), color: atomColors.O, radius: atomRadii.O },
             { element: "H", position: new THREE.Vector3(-0.8, 0.6, 0), color: atomColors.H, radius: atomRadii.H },
             { element: "H", position: new THREE.Vector3(0.8, 0.6, 0), color: atomColors.H, radius: atomRadii.H }
         );
-        bonds.push(
-            { from: 0, to: 1, order: 1 },
-            { from: 0, to: 2, order: 1 }
+        bonds.push({ from: 0, to: 1, order: 1 }, { from: 0, to: 2, order: 1 });
+        return { atoms, bonds, name };
+    }
+    if (smiles === "O=C=O" || smiles === "CO2") {
+        atoms.push(
+            { element: "O", position: new THREE.Vector3(-1.2, 0, 0), color: atomColors.O, radius: atomRadii.O },
+            { element: "C", position: new THREE.Vector3(0, 0, 0), color: atomColors.C, radius: atomRadii.C },
+            { element: "O", position: new THREE.Vector3(1.2, 0, 0), color: atomColors.O, radius: atomRadii.O }
         );
-    } else if (smiles.includes("C")) {
-        // Generic organic molecule - create a simple chain
-        const carbonCount = (smiles.match(/C/g) || []).length;
-        for (let i = 0; i < carbonCount; i++) {
-            atoms.push({
-                element: "C",
-                position: new THREE.Vector3(i * 1.5 - (carbonCount - 1) * 0.75, 0, 0),
-                color: atomColors.C,
-                radius: atomRadii.C,
-            });
-            if (i > 0) {
-                bonds.push({ from: i - 1, to: i, order: 1 });
+        bonds.push({ from: 0, to: 1, order: 2 }, { from: 1, to: 2, order: 2 });
+        return { atoms, bonds, name };
+    }
+    if (smiles === "[OH-]") {
+        atoms.push(
+            { element: "O", position: new THREE.Vector3(0, 0, 0), color: atomColors.O, radius: atomRadii.O },
+            { element: "H", position: new THREE.Vector3(0.8, 0, 0), color: atomColors.H, radius: atomRadii.H }
+        );
+        bonds.push({ from: 0, to: 1, order: 1 });
+        return { atoms, bonds, name };
+    }
+
+    // --- General SMILES parser for organic molecules ---
+    // Tokenize: extract heavy atoms (Cl, Br, C, N, O, S, P, F) and bond symbols
+    const tokens: { element: string; bondOrder: number }[] = [];
+    let i = 0;
+    let nextBond = 1;
+    while (i < smiles.length) {
+        const ch = smiles[i];
+        // Handle bond order symbols
+        if (ch === "=") { nextBond = 2; i++; continue; }
+        if (ch === "#") { nextBond = 3; i++; continue; }
+        // Skip branches, charges, ring digits, stereochemistry
+        if ("()[]@+-.0123456789/\\%{}".includes(ch)) {
+            i++;
+            continue;
+        }
+        // Two-letter elements
+        if (i + 1 < smiles.length) {
+            const two = smiles.slice(i, i + 2);
+            if (two === "Cl" || two === "Br") {
+                tokens.push({ element: two, bondOrder: nextBond });
+                nextBond = 1;
+                i += 2;
+                continue;
             }
         }
-    } else {
-        // Default: single atom
-        atoms.push({
-            element: "C",
-            position: new THREE.Vector3(0, 0, 0),
-            color: atomColors.C,
-            radius: atomRadii.C,
-        });
+        // Single-letter heavy atoms (uppercase)
+        if (/[A-Z]/.test(ch)) {
+            // Check for lowercase after (like 'c' aromatic) - treat uppercase as element
+            const el = ch;
+            tokens.push({ element: el, bondOrder: nextBond });
+            nextBond = 1;
+            i++;
+            continue;
+        }
+        // Aromatic lowercase atoms (c, n, o, s)
+        if (/[cnos]/.test(ch)) {
+            tokens.push({ element: ch.toUpperCase(), bondOrder: nextBond });
+            nextBond = 1;
+            i++;
+            continue;
+        }
+        i++;
     }
+
+    if (tokens.length === 0) {
+        atoms.push({ element: "C", position: new THREE.Vector3(0, 0, 0), color: atomColors.C, radius: atomRadii.C });
+        return { atoms, bonds, name };
+    }
+
+    // Lay atoms out in a zigzag chain with proper 3D coordinates
+    const bondLen = 1.5;
+    const zigAngle = Math.PI / 6; // 30° zigzag
+    tokens.forEach((tok, idx) => {
+        let x: number, y: number, z: number;
+        if (tokens.length <= 3) {
+            // Small molecules: spread linearly
+            x = (idx - (tokens.length - 1) / 2) * bondLen;
+            y = 0;
+            z = 0;
+        } else {
+            // Larger molecules: zigzag layout in the xy plane
+            x = idx * bondLen * Math.cos(zigAngle);
+            y = (idx % 2 === 0 ? 0.5 : -0.5) * bondLen * Math.sin(zigAngle + 0.3);
+            z = (idx % 3 === 0 ? 0.3 : idx % 3 === 1 ? -0.2 : 0) * 0.5; // slight depth
+        }
+        // Center the molecule
+        const cx = ((tokens.length - 1) * bondLen * Math.cos(zigAngle)) / 2;
+        x -= cx;
+
+        const el = tok.element;
+        atoms.push({
+            element: el,
+            position: new THREE.Vector3(x, y, z),
+            color: atomColors[el] ?? 0x94a3b8,
+            radius: atomRadii[el] ?? 0.6,
+        });
+
+        if (idx > 0) {
+            bonds.push({ from: idx - 1, to: idx, order: tok.bondOrder });
+        }
+    });
 
     return { atoms, bonds, name };
 }
