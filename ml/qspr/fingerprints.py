@@ -30,19 +30,20 @@ Why we append physicochemical descriptors:
 import numpy as np
 from typing import Dict, List, Optional
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors, Crippen, Lipinski, rdMolDescriptors, MolSurf
+from rdkit.Chem import AllChem, Descriptors, Crippen, Lipinski, rdMolDescriptors, MolSurf, MACCSkeys
 from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
+from rdkit.Chem.EState import EState_VSA
 
-from .config import MORGAN_RADIUS, MORGAN_NBITS, USE_PHYSICOCHEMICAL_DESCRIPTORS
+from .config import MORGAN_RADIUS, MORGAN_NBITS, USE_PHYSICOCHEMICAL_DESCRIPTORS, USE_MACCS_KEYS, MACCS_NBITS
 
 
 class MorganFingerprintCalculator:
     """
-    Computes Morgan fingerprints (ECFP4) + optional physicochemical descriptors.
+    Computes Morgan fingerprints (ECFP4) + MACCS keys + physicochemical descriptors.
 
     The feature vector is:
-      [Morgan FP bits (2048)] + [PhysChem descriptors (8)]
-      Total: 2056 dimensions
+      [Morgan FP bits (4096)] + [MACCS keys (167)] + [PhysChem descriptors (20)]
+      Total: 4283 dimensions
 
     Thread-safe: no mutable state after __init__.
     """
@@ -52,18 +53,22 @@ class MorganFingerprintCalculator:
         radius: int = MORGAN_RADIUS,
         n_bits: int = MORGAN_NBITS,
         use_physchem: bool = USE_PHYSICOCHEMICAL_DESCRIPTORS,
+        use_maccs: bool = USE_MACCS_KEYS,
     ):
         self.radius = radius
         self.n_bits = n_bits
         self.use_physchem = use_physchem
+        self.use_maccs = use_maccs
         self._feature_names: Optional[List[str]] = None
 
     @property
     def n_features(self) -> int:
         """Total feature vector dimensionality."""
         n = self.n_bits
+        if self.use_maccs:
+            n += MACCS_NBITS
         if self.use_physchem:
-            n += 14  # 14 physicochemical descriptors (v3)
+            n += 20  # 20 physicochemical descriptors (v4)
         return n
 
     @property
@@ -71,6 +76,8 @@ class MorganFingerprintCalculator:
         """Ordered list of feature names."""
         if self._feature_names is None:
             names = [f"morgan_bit_{i}" for i in range(self.n_bits)]
+            if self.use_maccs:
+                names.extend([f"maccs_bit_{i}" for i in range(MACCS_NBITS)])
             if self.use_physchem:
                 names.extend([
                     "physchem_mw",
@@ -87,6 +94,12 @@ class MorganFingerprintCalculator:
                     "physchem_heavy_atom_count",
                     "physchem_bertz_ct",
                     "physchem_num_heteroatoms",
+                    "physchem_labute_asa",
+                    "physchem_peoe_vsa1",
+                    "physchem_slogp_vsa1",
+                    "physchem_num_aliphatic_rings",
+                    "physchem_num_saturated_rings",
+                    "physchem_num_aromatic_heterocycles",
                 ])
             self._feature_names = names
         return self._feature_names
@@ -111,14 +124,28 @@ class MorganFingerprintCalculator:
             nBits=self.n_bits,
             useChirality=True,     # Encode stereochemistry
             useBondTypes=True,     # Encode bond types
+            useFeatures=True,      # Pharmacophoric feature invariants: improves activity prediction
         )
+        return np.array(fp, dtype=np.float32)
+
+    def compute_maccs(self, mol: Chem.Mol) -> np.ndarray:
+        """
+        Compute MACCS 166 structural keys.
+
+        MACCS keys encode 166 predefined substructural patterns covering
+        functional groups, ring systems, and pharmacophoric features.
+        They are complementary to Morgan fingerprints, capturing global
+        patterns that circular fingerprints can miss.
+        """
+        fp = MACCSkeys.GenMACCSKeys(mol)
         return np.array(fp, dtype=np.float32)
 
     def compute_physchem(self, mol: Chem.Mol) -> np.ndarray:
         """
-        Compute 14 physicochemical descriptors (v3 — expanded from 8).
+        Compute 20 physicochemical descriptors (v4 — expanded from 14).
 
         Selected for pharmacokinetic and QSPR relevance:
+          Core 14 (from v3):
           - MW: Lipinski Ro5 criterion, absorption predictor
           - TPSA: Blood-brain barrier, intestinal absorption
           - LogP: Lipophilicity, membrane permeability
@@ -132,6 +159,16 @@ class MorganFingerprintCalculator:
           - HeavyAtomCount: Molecular size proxy
           - BertzCT: Topological complexity (graph-theoretic)
           - NumHeteroatoms: Heteroatom fraction, solubility/reactivity
+
+          New in v4 (6 descriptors):
+          - LabuteASA: Labute approximate surface area — strongly correlated with logP and solubility
+          - PEOE_VSA1: Partial equalization of orbital electronegativity VSA
+                       — captures electrostatic surface features for ADMET
+          - SlogP_VSA1: LogP-weighted van der Waals surface area
+                        — direct lipophilicity surface descriptor
+          - NumAliphaticRings: Aliphatic ring count — metabolic soft spots
+          - NumSaturatedRings: Saturated ring count — 3D character (sp3)
+          - NumAromaticHeterocycles: Aromatic heterocycles — binding motifs/toxicophores
         """
         return np.array([
             Descriptors.MolWt(mol),
@@ -148,6 +185,13 @@ class MorganFingerprintCalculator:
             mol.GetNumHeavyAtoms(),
             Descriptors.BertzCT(mol),
             Descriptors.NumHeteroatoms(mol),
+            # v4 additions
+            rdMolDescriptors.CalcLabuteASA(mol),
+            MolSurf.PEOE_VSA1(mol),
+            MolSurf.SlogP_VSA1(mol),
+            Descriptors.NumAliphaticRings(mol),
+            Descriptors.NumSaturatedRings(mol),
+            Descriptors.NumAromaticHeterocycles(mol),
         ], dtype=np.float32)
 
     def compute(self, smiles: str) -> np.ndarray:
@@ -158,12 +202,15 @@ class MorganFingerprintCalculator:
             1D numpy array of shape (n_features,)
         """
         mol = self.smiles_to_mol(smiles)
-        fp = self.compute_morgan_fp(mol)
+        parts = [self.compute_morgan_fp(mol)]
+
+        if self.use_maccs:
+            parts.append(self.compute_maccs(mol))
 
         if self.use_physchem:
-            physchem = self.compute_physchem(mol)
-            return np.concatenate([fp, physchem])
-        return fp
+            parts.append(self.compute_physchem(mol))
+
+        return np.concatenate(parts)
 
     def compute_batch(self, smiles_list: List[str]) -> np.ndarray:
         """
@@ -186,12 +233,15 @@ class MorganFingerprintCalculator:
     def describe(self) -> Dict:
         """Return a description of this descriptor configuration."""
         return {
-            "type": "Morgan Fingerprint (ECFP4)",
+            "type": "Morgan Fingerprint (ECFP4) + MACCS Keys",
             "radius": self.radius,
             "n_bits": self.n_bits,
+            "use_maccs": self.use_maccs,
+            "maccs_bits": MACCS_NBITS if self.use_maccs else 0,
             "use_physchem": self.use_physchem,
+            "n_physchem": 20 if self.use_physchem else 0,
             "n_features": self.n_features,
-            "version": f"ecfp{self.radius * 2}_{self.n_bits}",
+            "version": f"ecfp{self.radius * 2}_{self.n_bits}_maccs_v4",
         }
 
 

@@ -30,15 +30,14 @@
   <img src="https://img.shields.io/badge/Three.js-3D_Engine-000000?logo=threedotjs" />
   <img src="https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-3ecf8e?logo=supabase" />
   <img src="https://img.shields.io/badge/Python-ML%20Backend-3776ab?logo=python" />
-  <img src="https://img.shields.io/badge/QSPR-v2.0_Ensemble-ff6600" />
+  <img src="https://img.shields.io/badge/QSPR-v4.0_Ensemble-ff6600" />
   <img src="https://img.shields.io/badge/ADMET-v4.0_Domain--Aware-e11d48" />
   <img src="https://img.shields.io/badge/RDKit-ECFP6_2094-005571" />
   <img src="https://img.shields.io/badge/ChEMBL_34-Target_Prediction-2563eb" />
   <img src="https://img.shields.io/badge/STRING_DB-PPI_Network-8b5cf6" />
   <img src="https://img.shields.io/badge/Open_Targets-Disease_Mapping-ef4444" />
-  <img src="https://img.shields.io/badge/Cerebras-AI_Copilot-8b5cf6" />
+  <img src="https://img.shields.io/badge/Groq-AI_Assistance-f55036" />
   <img src="https://img.shields.io/badge/PersonaPlex-Voice_AI-22c55e" />
-  <img src="https://img.shields.io/badge/Docker-Railway-0db7ed?logo=docker" />
 </p>
 
 ---
@@ -47,15 +46,15 @@
 
 Drug discovery is one of the slowest, most expensive pipelines in healthcare — taking **10–15 years** and costing **$2.6 billion+** per approved drug. Early-stage researchers lack access to fast, intelligent tools that can predict molecular properties, flag ADMET risks, and suggest lead optimizations — all in one place.
 
-**InSilico Formulator** solves this by putting an AI-powered drug formulation lab directly in the browser — combining ML-based property prediction, interactive 3D molecular visualization, a reaction animation engine, and a context-aware AI copilot that reasons like a senior medicinal chemist.
+**InSilico Formulator** solves this by putting an AI-powered drug formulation lab directly in the browser — combining ML-based property prediction, interactive 3D molecular visualization, a reaction animation engine, and a context-aware AI Assistance that reasons like a senior medicinal chemist.
 
 ---
 
 ## ✨ Features
 
-### 🔬 Molecular Property Prediction (QSPR v2.0 + ADMET v4.0)
+### 🔬 Molecular Property Prediction (QSPR v4.0 + ADMET v4.0)
 - Predict **Aqueous Solubility (logS)**, **Lipophilicity (logD)**, **Blood-Brain Barrier Penetration**, and **Clinical Toxicity** from any SMILES input
-- **QSPR v2.0 Ensemble Engine**: **RandomForest + XGBoost** with Optuna-tuned hyperparameters, trained on MoleculeNet benchmarks (ESOL, Lipophilicity, BBBP, ClinTox)
+- **QSPR v4.0 Ensemble Engine**: **RandomForest (1500 trees) + XGBoost (2000 rounds, early stopping)** with Optuna-tuned hyperparameters, **4283-dimensional features** (ECFP4 4096-bit + MACCS keys + 20 physicochemical descriptors), SMOTE oversampling for imbalanced datasets, trained on MoleculeNet benchmarks (ESOL, Lipophilicity, BBBP, ClinTox)
 - **ADMET v4.0 Domain-Aware Prediction System** — 17 ADMET endpoints with applicability domain awareness, prodrug detection, and metabolism-informed bioavailability:
   - **2094-dimensional hybrid features**: ECFP6 (radius 3, 2048 bits) + 26 physicochemical + 8 topological + 12 functional group descriptors
   - **Applicability domain**: 5-method composite (Tanimoto 30%, Mahalanobis 25%, Isolation Forest 20%, PCA 15%, Leverage 10%) — flags out-of-domain molecules with calibrated uncertainty inflation
@@ -105,12 +104,12 @@ Drug discovery is one of the slowest, most expensive pipelines in healthcare —
 - Compare multiple compounds across all predicted properties
 - **Live dataset lookup** — query experimentally measured values by SMILES or compound name across 8,862 training compounds
 
-### 🤖 AI Copilot
+### 🤖 AI Assistance
 - Conversational AI assistant with deep **medicinal chemistry, ADMET, SAR, and PK/PD** expertise
 - **Context-aware** — automatically ingests your compound library, simulations & prediction results via RAG context builder
 - **Function calling**: runs live predictions, compares molecules, and queries QSPR datasets mid-conversation
 - **Analytical reasoning**: identifies patterns, flags red flags, spots structure-property relationships
-- Powered by **Cerebras AI (llama3.1-8b)** — ultra-fast inference
+- Powered by **Groq (openai/gpt-oss-120b)** — ultra-fast inference
 - Markdown-rendered responses with suggested follow-up prompts
 - **Per-compound AI summary** — one-click 2–3 sentence analysis on any molecule card
 
@@ -181,13 +180,24 @@ Each step card transitions through `waiting → running → complete` with:
 
 ### 🎙️ PersonaPlex Voice AI Assistant
 - **Floating draggable orb** on every page — tap to speak naturally
-- **PersonaPlex pipeline**: Browser ASR → Cerebras AI (with function calling) → Microsoft Edge Neural TTS
+- **PersonaPlex pipeline**: Browser ASR → Groq AI (with function calling) → Microsoft Edge Neural TTS
 - Optional **NVIDIA Riva** ASR/TTS for enterprise-grade accuracy (falls back to browser APIs)
 - **5 voice tools**: `run_prediction`, `get_descriptors`, `get_drug_likeness`, `compare_molecules`, `query_qspr_dataset`
 - 4 animated states: Idle 🔵 → Listening 🔴 → Processing 🟣 → Speaking 🟢
 - Voice-optimized responses — conversational, natural, no jargon dumps
 - Transcript history with message bubbles
 - Quick suggestion chips for instant queries
+
+### 📋 Reports & Export
+
+### 💊 Drug Intelligence — Compound Drug Analysis
+- **Compound drug decomposition** — input a compound drug (SMILES or drug name) and decompose it into individual constituent molecules
+- **4-stage animated pipeline**: Molecule Detection → Segregation Engine → Parallel Analysis → Report Generation
+- **Parallel property prediction** — predicts solubility, logP, toxicity, BBB permeability, pH, pKa, bioavailability, and drug-likeness for each constituent
+- **Functional group detection** from SMILES substructure patterns
+- Animated Framer Motion pipeline stepper with per-stage progress tracking
+- Exportable compound analysis reports
+- Navigate to `/drug-intelligence` to access
 
 ### 📋 Reports & Export
 - **PDF reports** with molecule info, predicted properties, toxicity screening, drug-likeness scores
@@ -248,18 +258,16 @@ Each step card transitions through `waiting → running → complete` with:
 | **STRING DB API** | Protein-protein interaction data (human, score ≥ 0.4) |
 | **Reactome + KEGG APIs** | Pathway enrichment analysis |
 | **Open Targets GraphQL** | Gene-disease association mapping |
-| **Cerebras AI** | LLM reasoning engine (llama3.1-8b) |
+| **Groq** | LLM reasoning engine (openai/gpt-oss-120b) |
 | **Edge TTS** | Microsoft Edge Neural text-to-speech |
 | **NVIDIA Riva** | Enterprise ASR/TTS (optional, browser fallback) |
 | **PersonaPlex** | Voice AI session pipeline |
 | **python-dotenv** | Auto-loads `.env.local` for API keys |
 
-### DevOps & Deployment
+### DevOps
 | Technology | Purpose |
 |-----------|---------|
 | **Docker** | ML backend containerization |
-| **Railway** | ML server cloud deployment |
-| **Vercel** | Frontend deployment (Next.js) |
 | **Gunicorn** | Production WSGI server (2 workers, 120s timeout) |
 | **Concurrently** | Runs Next.js + Flask in parallel during dev |
 
@@ -271,8 +279,8 @@ Each step card transitions through `waiting → running → complete` with:
 ┌──────────────────────────────────────────────────────────────────────┐
 │                           BROWSER                                    │
 │  ┌───────────┐  ┌───────────┐  ┌────────────┐  ┌────────────────┐  │
-│  │ Molecule   │  │ Simulation│  │ AI Copilot  │  │ PersonaPlex    │  │
-│  │ Input      │  │ Config    │  │ Chat        │  │ Voice Orb      │  │
+│  │ Molecule   │  │ Simulation│  │ AI Assist.  │  │ PersonaPlex    │  │
+│  │ Input      │  │ Config    │  │ Chat (Groq) │  │ Voice Orb      │  │
 │  │ (SMILES /  │  │ (Props,   │  │ (Function   │  │ ASR → AI → TTS │  │
 │  │  Draw /    │  │  Solvent, │  │  Calling)   │  │ Edge TTS /     │  │
 │  │  Ketcher)  │  │  T, P)    │  │             │  │ Riva fallback  │  │
@@ -294,8 +302,8 @@ Each step card transitions through `waiting → running → complete` with:
 └─────────────┼──────────────────────────────────────┼────────────────┘
               │                                      │
    ┌──────────▼──────────────┐         ┌─────────────▼───────────┐
-   │  Flask ML + Voice       │         │   Cerebras AI           │
-   │  Server v2.3            │         │   (llama3.1-8b)         │
+   │  Flask ML + Voice       │         │   Groq AI               │
+   │  Server v2.3            │         │  (openai/gpt-oss-120b)  │
    │  (Port 5001)            │         │                         │
    │                         │         │  Function calling +     │
    │  ┌───────────────────┐  │         │  QSPR dataset context   │
@@ -313,7 +321,7 @@ Each step card transitions through `waiting → running → complete` with:
    │  │ Ensemble Routing   │  │
    │  └───────────────────┘  │
    │  ┌───────────────────┐  │
-   │  │ QSPR v2.0 (legacy) │  │
+   │  │ QSPR v4.0 ensemble  │  │
    │  │ RF + XGB (8 models)│  │
    │  │ + 4 legacy DT      │  │
    │  └───────────────────┘  │
@@ -335,7 +343,7 @@ Each step card transitions through `waiting → running → complete` with:
    │  ┌───────────────────┐  │
    │  │ PersonaPlex Voice  │  │
    │  │ Session Manager +  │  │
-   │  │ Cerebras Bridge    │  │
+   │  │ Groq Bridge        │  │
    │  │ + Edge TTS / Riva  │  │
    │  └───────────────────┘  │
    │  ┌───────────────────┐  │
@@ -391,14 +399,15 @@ Create `.env.local` in the project root:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-# AI Copilot — Cerebras AI
-CEREBRAS_API_KEY=your-cerebras-api-key
-CEREBRAS_MODEL=llama3.1-8b            # default model
+# Groq AI (Reasoning Engine)
+GROQ_API_KEY=your-groq-api-key
+GROQ_MODEL=openai/gpt-oss-120b         # default model
 
 # ML Backend
 ML_BACKEND_URL=http://localhost:5001   # Flask ML server URL
+NEXT_PUBLIC_ML_BACKEND_URL=http://localhost:5001
 
-# (Optional) AI Copilot fallback — OpenRouter API Key
+# (Optional) AI Assistance fallback — OpenRouter API Key
 GEMINI_API_KEY=your-openrouter-api-key
 
 # (Optional) NVIDIA Riva — enterprise ASR/TTS
@@ -408,7 +417,7 @@ RIVA_TTS_VOICE=English-US.Female-1
 RIVA_USE_SSL=true
 ```
 
-> **Note:** The Python ML server automatically reads `.env.local` via `python-dotenv`. All API keys defined there (including `CEREBRAS_API_KEY`) are loaded at startup. No manual `export` is required.
+> **Note:** The Python ML server automatically reads `.env.local` via `python-dotenv`. All API keys defined there (including `GROQ_API_KEY`) are loaded at startup. No manual `export` is required.
 
 ### 3. Database Setup
 
@@ -457,6 +466,9 @@ Navigate to `/reactions` for the interactive Three.js 3D reaction visualization 
 ### Network Pharmacology
 Navigate to `/network-pharmacology` to run a full **systems pharmacology pipeline** — select a molecule from your library (or paste a SMILES), watch the animated 4-step pipeline (targets → PPI → pathways → diseases), then explore results across 5 interactive tabs including a force-directed PPI network graph.
 
+### Drug Intelligence
+Navigate to `/drug-intelligence` to analyze **compound drugs** — input a multi-component drug or SMILES, then watch the 4-stage pipeline decompose it into constituents and predict properties for each molecule in parallel.
+
 ### Sample SMILES to Try
 | Compound | SMILES |
 |----------|--------|
@@ -497,9 +509,9 @@ Navigate to `/network-pharmacology` to run a full **systems pharmacology pipelin
 | `POST` | `/voice/session` | Create a PersonaPlex voice session |
 | `GET` | `/voice/session/:id` | Get voice session status |
 | `DELETE` | `/voice/session/:id` | Delete / end a voice session |
-| `POST` | `/voice/process` | Process a voice query (ASR → Cerebras → tools → response) |
+| `POST` | `/voice/process` | Process a voice query (ASR → Groq → tools → response) |
 | `POST` | `/voice/tts` | Text-to-speech via Edge TTS or Riva |
-| `GET` | `/voice/status` | Voice subsystem status (Cerebras, Riva, Edge TTS) |
+| `GET` | `/voice/status` | Voice subsystem status (Groq, Riva, Edge TTS) |
 
 ### Next.js API Routes
 
@@ -509,7 +521,7 @@ Navigate to `/network-pharmacology` to run a full **systems pharmacology pipelin
 | `POST` | `/api/predict/compare` | Ensemble vs legacy side-by-side comparison |
 | `POST` | `/api/predict/save` | Persist results to Supabase |
 | `POST` | `/api/descriptors` | Proxy to ML descriptors endpoint (mock fallback) |
-| `POST` | `/api/copilot` | AI chat with context-aware function calling |
+| `POST` | `/api/copilot` | AI Assistance chat with context-aware function calling |
 | `POST` | `/api/copilot/summary` | Short 2–3 sentence compound analysis |
 | `POST` | `/api/network-pharmacology` | Proxy to NP endpoints (action: `full` / `targets` / `ppi` / `pathways` / `diseases`; 120s timeout; mock fallback) |
 
@@ -587,13 +599,13 @@ curl -X POST http://localhost:5001/network/full-analysis \
 
 ## 🧠 ML Models
 
-### QSPR Engine v2.0
+### QSPR Engine v4.0
 
-The prediction engine uses a **weighted ensemble** of RandomForest and XGBoost, with weights determined by cross-validation performance. Legacy Decision Tree + XGBoost v1 models are available as fallbacks.
+The prediction engine uses a **weighted ensemble** of RandomForest (1500 trees) and XGBoost (up to 2000 rounds with early stopping), with weights determined by cross-validation performance. Features include **4283-dimensional molecular descriptors** (ECFP4 4096-bit Morgan FP + 167 MACCS keys + 20 physicochemical descriptors), scaffold-based splitting for realistic evaluation, and SMOTE oversampling for imbalanced classification tasks. Legacy Decision Tree + XGBoost v1 models are available as fallbacks.
 
 ### ADMET Engine v4.0 (Domain-Aware)
 
-A comprehensive **domain-aware ADMET prediction system** that overcomes failures in high MW compounds, nucleoside analogues, phosphoramidate prodrugs, and large antivirals. Runs alongside QSPR v2 with full backward compatibility.
+A comprehensive **domain-aware ADMET prediction system** that overcomes failures in high MW compounds, nucleoside analogues, phosphoramidate prodrugs, and large antivirals. Runs alongside QSPR v4 with full backward compatibility.
 
 #### ADMET Endpoints (17 total)
 
@@ -650,22 +662,25 @@ A comprehensive **domain-aware ADMET prediction system** that overcomes failures
 | **BBBP** | Classification | 2,050 | Blood-Brain Barrier Penetration | binary |
 | **ClinTox** | Classification | 1,484 | Clinical Toxicity | binary |
 
-### QSPR v2 Feature Engineering (2,056 dimensions)
+### QSPR v4 Feature Engineering (4,283 dimensions)
 
 | Feature Type | Count | Details |
-|-------------|-------|---------| 
-| **Morgan Fingerprints (ECFP4)** | 2,048 | Radius 2, captures substructural fragments of diameter 4 |
-| **Physicochemical Descriptors** | 8 | MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3 |
+|-------------|-------|---------|
+| **Morgan Fingerprints (ECFP4)** | 4,096 | Radius 2 with `useFeatures=True`, captures pharmacophoric substructural fragments |
+| **MACCS Keys** | 167 | Standard 166-bit MACCS structural keys for global structural patterns |
+| **Physicochemical Descriptors** | 20 | MW, TPSA, LogP, HBD, HBA, RotBonds, AromaticRings, FractionCSP3, HeavyAtomCount, RingCount, NumHeteroatoms, BertzCT, Chi0n, HallKierAlpha, LabuteASA, PEOE_VSA1, SlogP_VSA1, NumAliphaticRings, NumSaturatedRings, NumAromaticHeterocycles |
 
-### QSPR v2 Model Architecture
+### QSPR v4 Model Architecture
 
 | Component | Configuration |
 |-----------|---------------|
-| **RandomForest** | 500 estimators, sqrt features, min_samples_split=5 |
-| **XGBoost** | 300 estimators, max_depth=6, lr=0.05, subsample=0.8 |
-| **Ensemble** | Weighted average (weights from CV performance, ~40/60 RF/XGB) |
-| **Tuning** | Optuna Bayesian optimization (50 trials, 5-fold CV) |
+| **RandomForest** | 1,500 estimators, sqrt features, min_samples_split=5, class_weight=balanced_subsample |
+| **XGBoost** | 2,000 max estimators, max_depth=7, lr=0.015, subsample=0.85, early stopping (50 rounds patience) |
+| **Ensemble** | Weighted average (weights from CV performance, ~47–50/50–53 RF/XGB) |
+| **SMOTE** | Synthetic minority oversampling for imbalanced classification (minority_ratio < 0.25) |
+| **Tuning** | Optuna Bayesian optimization (80 trials, 5-fold scaffold CV) |
 | **Splitting** | Scaffold split (Bemis-Murcko) for realistic generalization |
+| **Uncertainty** | Staged boosting-round variance (25%, 50%, 75%, 100% checkpoints) with calibrated confidence floors |
 
 ### Prediction Accuracy & Confidence Calibration
 
@@ -687,16 +702,25 @@ where $w = 0.2 + 0.5 \cdot \text{confidence}_{\text{QSPR}}$. At high QSPR confid
 #### Benchmark Results
 
 | Compound | LogP (Predicted) | LogP (Experimental) | Confidence | Drug-Likeness |
-|----------|-----------------|--------------------|-----------|--------------| 
+|----------|-----------------|--------------------|-----------|--------------|
 | **Aspirin** | 0.88 | 1.19 | 73.5% | A (82.0) |
 | **Caffeine** | −0.30 | −0.07 | 83.3% | A (82.0) |
 | **Ibuprofen** | 2.54 | 3.97 | 73.2% | A (82.0) |
+
+#### QSPR v4 Model Performance (Scaffold Split)
+
+| Property | Task | Best Model | Test Score | CV Score (5-fold) |
+|----------|------|-----------|------------|------------------|
+| **Solubility** | Regression | XGBoost | R² = 0.847 | R² = 0.827 ± 0.026 |
+| **LogP** | Regression | XGBoost | R² = 0.705 | R² = 0.684 ± 0.035 |
+| **BBBP** | Classification | XGBoost | AUC = 0.834 | AUC = 0.906 ± 0.020 |
+| **Toxicity** | Classification | XGBoost | AUC = 0.894 | AUC = 0.926 ± 0.013 |
 
 ### Model Files
 
 ```
 ml/models/
-├── qspr/                                    # QSPR v2.0 ensemble models
+├── qspr/                                    # QSPR v4.0 ensemble models
 │   ├── solubility_random_forest.joblib      ├── solubility_xgboost.joblib
 │   ├── logp_random_forest.joblib            ├── logp_xgboost.joblib
 │   ├── bbbp_random_forest.joblib            ├── bbbp_xgboost.joblib
@@ -736,11 +760,11 @@ python ml/train_admet.py --quick
 python ml/train_admet.py --endpoint logp
 python ml/train_admet.py --endpoints logp,bbbp,toxicity
 
-# ── QSPR v2.0 (legacy, still supported) ──
+# ── QSPR v4.0 ──
 
 # Full training with Optuna hyperparameter tuning
 npm run ml:train:tune
-# → Trains RF + XGB for all 4 properties with Bayesian optimization
+# → Trains RF + XGB for all 4 properties with Bayesian optimization (80 trials)
 
 # Standard training (default hyperparameters)
 npm run ml:train
@@ -768,13 +792,14 @@ inSillico/
 │   │   │   │   ├── compare/        #   Ensemble vs legacy comparison
 │   │   │   │   └── save/           #   Persist results to Supabase
 │   │   │   ├── descriptors/        # Molecular descriptor proxy (mock fallback)
-│   │   │   ├── copilot/            # AI assistant endpoints
+│   │   │   ├── copilot/            # AI Assistance endpoints
 │   │   │   │   ├── route.ts        #   Chat with function calling
 │   │   │   │   └── summary/        #   Quick compound analysis
 │   │   │   └── network-pharmacology/ # 🕸️ NP proxy (action routing, 120s timeout, mock fallback)
 │   │   ├── auth/                   # Login & Signup pages
-│   │   ├── copilot/                # AI Chat interface
+│   │   ├── copilot/                # AI Assistance interface
 │   │   ├── dashboard/              # User dashboard with metrics
+│   │   ├── drug-intelligence/      # 💊 Compound Drug Analysis Pipeline
 │   │   ├── molecules/new/          # 3-step molecule input wizard
 │   │   ├── reactions/              # ⚗️ Three.js 3D Reaction Lab
 │   │   ├── simulations/            # Simulation config, demo mode
@@ -822,12 +847,15 @@ inSillico/
 │   │   └── Erlenmeyer flask.json  #   Flask animation
 │   ├── lib/
 │   │   ├── auth-context.tsx        # Auth provider + credit tracking
-│   │   ├── cerebras-client.ts      # Cerebras AI client wrapper
+│   │   ├── groq-client.ts         # Groq AI client (streaming, function calling, retries)
+│   │   ├── gemini-client.ts       # Google Gemma 3n via OpenRouter (optional fallback)
+│   │   ├── cerebras-client.ts     # ⚠️ Deprecated — re-exports from groq-client
 │   │   ├── tool-definitions.ts     # AI function calling tool defs
 │   │   ├── rag-context.ts          # RAG context builder for AI
 │   │   ├── smiles-to-3d.ts        # Client-side SMILES → 3D coordinates
 │   │   ├── ml-mock.ts             # Mock ML predictions (offline fallback)
 │   │   ├── generate-pdf-report.ts  # jsPDF report generation
+│   │   ├── generate-network-pharmacology-pdf.ts  # NP-specific PDF reports
 │   │   ├── haptics.ts              # Haptic feedback patterns
 │   │   └── supabase/               # Client & server Supabase helpers
 │   └── middleware.ts               # Supabase auth session refresh
@@ -835,7 +863,7 @@ inSillico/
 │   ├── server.py                   # Flask ML + Voice + 3D API (port 5001)
 │   ├── server_v1_legacy.py         # Legacy v1 server (deprecated)
 │   ├── descriptors.py              # RDKit ECFP4 + physicochemical engine
-│   ├── train_qspr.py              # QSPR v2.0 training pipeline
+│   ├── train_qspr.py              # QSPR v4.0 training pipeline
 │   ├── evaluate_qspr.py           # Model evaluation & metrics
 │   ├── train_models.py             # Legacy v1 training (deprecated)
 │   ├── download_moleculenet.py     # Dataset download utility
@@ -843,7 +871,7 @@ inSillico/
 │   ├── test_consistency.py         # Model consistency tests
 │   ├── train_admet.py             # 🧪 ADMET v4.0 training pipeline
 │   ├── requirements.txt            # Python dependencies
-│   ├── Dockerfile                  # Docker image for Railway deployment
+│   ├── Dockerfile                  # Docker image for ML backend deployment
 │   ├── admet/                      # 🧪 ADMET v4.0 Domain-Aware Package
 │   │   ├── __init__.py            #   Package root (v1.0.0)
 │   │   ├── config.py              #   Central config (17 endpoints, 6 data sources, hyperparams)
@@ -875,7 +903,7 @@ inSillico/
 │   │   └── serialization.py       #   Model save/load with metadata
 │   ├── personaplex/                # 🎙️ PersonaPlex Voice Pipeline
 │   │   ├── __init__.py            #   Package init
-│   │   ├── cerebras_bridge.py     #   Cerebras AI integration + tools
+│   │   ├── cerebras_bridge.py     #   Groq AI integration + tools (legacy filename)
 │   │   ├── session_manager.py     #   Voice session lifecycle
 │   │   ├── audio_processor.py     #   Audio format handling
 │   │   └── riva_client.py         #   NVIDIA Riva ASR/TTS client
@@ -896,12 +924,11 @@ inSillico/
 │   │   ├── bbbp.csv               #   2,050 compounds (BBB penetration)
 │   │   └── clintox.csv            #   1,484 compounds (toxicity)
 │   └── models/                     # Pre-trained model files
-│       ├── qspr/                  #   QSPR v2.0 ensemble (.joblib + .meta.json)
+│       ├── qspr/                  #   QSPR v4.0 ensemble (.joblib + .meta.json)
 │       │   └── training_report.json #  Full training report
 │       ├── *.joblib               #   Legacy v1 models
 │       └── training_metadata.json #   Legacy training metadata
 ├── public/                         # Static assets & logos
-├── railway.json                    # Railway deployment config
 ├── supabase_migration_prediction_results.sql  # DB migration script
 ├── package.json                    # npm scripts & dependencies
 └── tsconfig.json                   # TypeScript configuration
@@ -911,38 +938,98 @@ inSillico/
 
 ## 🚀 Deployment
 
-### Frontend → Vercel
+InSilico uses a 3-service architecture deployed across free tiers:
 
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel --prod
+```
+┌───────────────┐       ┌──────────────────┐       ┌──────────────┐
+│   Vercel       │──API──▶  Render (Docker)  │──SQL──▶  Supabase     │
+│   Next.js 16   │       │  Flask + RDKit    │       │  PostgreSQL   │
+│   Free tier    │       │  Free tier        │       │  Free tier    │
+└───────────────┘       └──────────────────┘       └──────────────┘
 ```
 
-Set environment variables in the Vercel dashboard:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `CEREBRAS_API_KEY`
-- `ML_BACKEND_URL` → your Railway deployment URL
+### 1. Database — Supabase (already hosted)
 
-### ML Backend → Railway (Docker)
+Your Supabase project is cloud-hosted. Run the migration to create the `prediction_results` table:
 
-The ML server includes a production-ready `Dockerfile` and `railway.json`:
+```sql
+-- Apply the migration in Supabase SQL Editor
+-- File: supabase_migration_prediction_results.sql
+```
+
+### 2. ML Backend — Render (Docker, Free Tier)
+
+The ML server has a production-optimized, memory-efficient Dockerfile for Render's 512 MB free tier.
+
+1. Push code to GitHub  
+2. Go to [render.com](https://render.com) → **New** → **Web Service**
+3. Configure:
+
+| Field | Value |
+|---|---|
+| **Repository** | Your GitHub repo |
+| **Root Directory** | `inSillico/ml` |
+| **Runtime** | `Docker` |
+| **Instance Type** | `Free` (512 MB) |
+| **Health Check Path** | `/health` |
+
+4. **Environment Variables** (set in Render dashboard):
+
+| Key | Value |
+|---|---|
+| `PORT` | `10000` |
+| `LOW_MEMORY` | `1` (loads XGBoost-only, skips RandomForest/ADMET to fit 512 MB) |
+| `GROQ_API_KEY` | Your Groq API key (for voice AI reasoning) |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` |
+| `RIVA_API_URL` | `grpc.nvcf.nvidia.com:443` |
+| `RIVA_API_KEY` | Your NVIDIA Riva API key |
+| `RIVA_TTS_VOICE` | `English-US.Female-1` |
+| `RIVA_USE_SSL` | `true` |
+
+Or use the included `render.yaml` Blueprint for one-click deploy.
+
+**Local Docker build & test:**
 
 ```bash
-# Local Docker build & test
 cd ml
 docker build -t insilico-ml .
-docker run -p 5001:5001 --env-file ../.env.local insilico-ml
+docker run -p 10000:10000 --env-file ../.env.local -e LOW_MEMORY=1 insilico-ml
 ```
 
-Railway config (`railway.json`):
-- **Builder**: Dockerfile (`ml/Dockerfile`)
-- **Health check**: `/health` (120s timeout)
-- **Restart policy**: On failure (max 3 retries)
-- **Server**: Gunicorn with 2 workers, 120s request timeout
+### 3. Frontend — Vercel (Free Tier)
+
+1. Push code to GitHub
+2. Go to [vercel.com](https://vercel.com) → **New Project** → Import repo
+3. Configure:
+
+| Field | Value |
+|---|---|
+| **Framework Preset** | `Next.js` |
+| **Root Directory** | `inSillico` |
+| **Build Command** | `next build` (default) |
+
+4. **Environment Variables** (set in Vercel dashboard):
+
+| Key | Value | Scope |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL | Browser + Server |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key | Browser + Server |
+| `NEXT_PUBLIC_ML_BACKEND_URL` | `https://your-service.onrender.com` | Browser + Server |
+| `ML_BACKEND_URL` | `https://your-service.onrender.com` | Server only |
+| `GROQ_API_KEY` | Your Groq API key | Server only |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Server only |
+| `RIVA_API_URL` | `grpc.nvcf.nvidia.com:443` | Server only |
+| `RIVA_API_KEY` | Your NVIDIA Riva key | Server only |
+| `RIVA_TTS_VOICE` | `English-US.Female-1` | Server only |
+| `RIVA_USE_SSL` | `true` | Server only |
+
+### Cost Summary
+
+| Service | Cost | Limits |
+|---|---|---|
+| **Vercel** | $0 | 100 GB bandwidth, serverless functions |
+| **Render** | $0 | 512 MB RAM, sleeps after 15 min idle |
+| **Supabase** | $0 | 500 MB DB, 1 GB file storage |
 
 ---
 
@@ -952,16 +1039,17 @@ Railway config (`railway.json`):
 |---------|--------------------|--------------------| 
 | **Setup time** | 2 minutes | Days to weeks |
 | **Cost** | Free & open source | $10K–$100K/yr licenses |
-| **AI Assistant** | Context-aware copilot with function calling + voice | None |
-| **ML Engine** | ADMET v4.0 (ECFP6, 2094 features, domain-aware) + QSPR v2.0 (ECFP4) | Single model |
+| **AI Assistant** | Context-aware AI Assistance with function calling + voice | None |
+| **ML Engine** | ADMET v4.0 (ECFP6, 2094 features, domain-aware) + QSPR v4.0 (ECFP4 4096-bit + MACCS keys, 4283 features) | Single model |
 | **Network Pharmacology** | Full pipeline: ChEMBL → STRING → Reactome/KEGG → Open Targets with animated stepper | Manual multi-tool workflow |
+| **Drug Intelligence** | Compound drug decomposition + parallel per-molecule analysis | Manual compound separation |
 | **Target Prediction** | 3-tier real-data pipeline (ChEMBL API + Morgan FP + SMARTS) | Database lookup only |
 | **3D Visualization** | Three.js engine + 3Dmol.js (reactions, conformers, vibration) | Static images |
-| **Voice interaction** | PersonaPlex (Cerebras + Edge TTS + Riva) | N/A |
+| **Voice interaction** | PersonaPlex (Groq + Edge TTS + Riva) | N/A |
 | **Dataset lookup** | Query 8,862 measured values mid-conversation | Manual search |
 | **Reports** | One-click PDF/CSV export | Manual export |
 | **UI/UX** | Modern glassmorphism, Framer Motion, Three.js | Legacy interfaces |
-| **Deployment** | Vercel + Railway + Supabase (free tier) | On-premises only |
+| **Deployment** | Vercel + Render + Supabase (all free tier) | On-premises only |
 
 ---
 
@@ -977,6 +1065,8 @@ Railway config (`railway.json`):
 - [x] Prodrug detection (phosphoramidate, ester, carbamate — 11 SMARTS + ML)
 - [x] Metabolism-aware bioavailability (CYP450 + P-gp + PPB → F = fa × fg × fh)
 - [x] MW/TPSA-stratified validation with calibration curves & uncertainty quantification
+- [x] Drug Intelligence — compound drug decomposition + parallel constituent analysis
+- [x] Groq AI migration (openai/gpt-oss-120b) replacing Cerebras
 - [ ] Retrosynthesis pathway suggestion
 - [ ] Molecular docking integration
 - [ ] Batch prediction (CSV of 1000+ SMILES)
@@ -996,7 +1086,7 @@ Railway config (`railway.json`):
 | `npm run dev` | Next.js dev server only → http://localhost:3000 |
 | `npm run ml` | Python ML + Voice + 3D server only → http://localhost:5001 |
 | `npm run ml:legacy` | Legacy v1 server (deprecated) |
-| `npm run ml:train` | Train QSPR v2.0 models (default hyperparameters) |
+| `npm run ml:train` | Train QSPR v4.0 models (default hyperparameters) |
 | `npm run ml:train:tune` | Train with Optuna Bayesian hyperparameter tuning |
 | `npm run ml:train:quick` | Quick training (reduced trials, for testing) |
 | `npm run ml:evaluate` | Evaluate models — scaffold-split metrics |

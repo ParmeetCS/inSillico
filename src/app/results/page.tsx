@@ -16,7 +16,10 @@ import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
-import MoleculeViewer3D from "@/components/molecule-viewer-3d";
+import dynamic from "next/dynamic";
+
+// Lazy-load heavy 3D viewer
+const MoleculeViewer3D = dynamic(() => import("@/components/molecule-viewer-3d"), { ssr: false });
 
 /* ─── Types ─── */
 interface SimulationFromDB {
@@ -305,7 +308,8 @@ export default function ResultsIndexPage() {
 
         setSimulations(transformed);
         setLoading(false);
-    }, [user, supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user]);
 
     useEffect(() => {
         if (!authLoading && !user) {
@@ -803,7 +807,7 @@ export default function ResultsIndexPage() {
                                         </div>
                                     </div>
 
-                                    {/* ─── AI Copilot Summary ─── */}
+                                    {/* ─── AI Assistance Summary ─── */}
                                     <div style={{
                                         borderTop: "1px solid var(--glass-border)",
                                         padding: "14px 24px",

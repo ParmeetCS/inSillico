@@ -25,10 +25,28 @@ import requests
 logger = logging.getLogger("personaplex.gemini")
 
 # ─── Configuration ───
+# Priority: GEMINI_API_KEY (OpenRouter) → GROQ_API_KEY (Groq) → unconfigured
 
-GEMINI_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "google/gemma-3n-e4b-it:free")
+_gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+_groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+
+if _gemini_key:
+    # Use OpenRouter / Gemini
+    GEMINI_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+    GEMINI_API_KEY = _gemini_key
+    GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "google/gemma-3n-e4b-it:free")
+    logger.info("Voice LLM: OpenRouter (Gemini)")
+elif _groq_key:
+    # Fallback to Groq (OpenAI-compatible)
+    GEMINI_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+    GEMINI_API_KEY = _groq_key
+    GEMINI_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+    logger.info("Voice LLM: Groq")
+else:
+    GEMINI_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+    GEMINI_API_KEY = ""
+    GEMINI_MODEL = "google/gemma-3n-e4b-it:free"
+    logger.warning("No LLM API key found. Set GEMINI_API_KEY or GROQ_API_KEY.")
 
 # Backward compatibility aliases
 CEREBRAS_API_URL = GEMINI_API_URL

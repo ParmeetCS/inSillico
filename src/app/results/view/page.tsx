@@ -13,7 +13,10 @@ import {
 import { GlassCard } from "@/components/ui/glass-card";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
-import MoleculeViewer3D from "@/components/molecule-viewer-3d";
+import dynamic from "next/dynamic";
+
+// Lazy-load heavy 3D viewer
+const MoleculeViewer3D = dynamic(() => import("@/components/molecule-viewer-3d"), { ssr: false });
 import {
     Radar,
     RadarChart,

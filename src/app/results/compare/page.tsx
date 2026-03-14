@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { haptic } from "@/lib/haptics";
-import MoleculeViewer3D from "@/components/molecule-viewer-3d";
+import dynamic from "next/dynamic";
+
+// Lazy-load heavy 3D viewer
+const MoleculeViewer3D = dynamic(() => import("@/components/molecule-viewer-3d"), { ssr: false });
 import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis,
     ResponsiveContainer, Legend, Tooltip,

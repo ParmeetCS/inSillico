@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-const ML_SERVER_URL = process.env.ML_BACKEND_URL || "http://localhost:5001";
+const ML_SERVER_URL = process.env.ML_BACKEND_URL || "https://insillico.onrender.com";
 
 export async function POST(req: NextRequest) {
     try {

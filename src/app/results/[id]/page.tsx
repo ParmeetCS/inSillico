@@ -19,7 +19,10 @@ import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
-import MoleculeViewer3D from "@/components/molecule-viewer-3d";
+import dynamic from "next/dynamic";
+
+// Lazy-load heavy 3D viewer
+const MoleculeViewer3D = dynamic(() => import("@/components/molecule-viewer-3d"), { ssr: false });
 import {
     Radar,
     RadarChart,
@@ -94,7 +97,8 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
         }
         setSim(data as unknown as SimulationResult);
         setLoading(false);
-    }, [id, supabase, router]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, router]);
 
     useEffect(() => {
         if (!user) {

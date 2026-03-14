@@ -1,17 +1,17 @@
 {
   "property": "logp",
   "type": "WeightedEnsemble",
-  "model_version": "3.0.0",
+  "model_version": "4.0.0",
   "weights": {
-    "random_forest": 0.39181862986692956,
-    "xgboost": 0.6081813701330705
+    "random_forest": 0.4733497794722285,
+    "xgboost": 0.5266502205277716
   },
   "metrics": {
-    "r2": 0.5579,
-    "rmse": 0.8907,
-    "mae": 0.7079,
-    "mean_uncertainty": 0.5580776243317421,
-    "mean_confidence": 0.7209611878341289
+    "r2": 0.6788,
+    "rmse": 0.7593,
+    "mae": 0.5984,
+    "mean_uncertainty": 0.4392295058122083,
+    "mean_confidence": 0.7254815588673698
   },
-  "saved_at": "2026-02-19 16:13:19 UTC"
+  "saved_at": "2026-02-27 15:53:42 UTC"
 }

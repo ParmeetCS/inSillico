@@ -1,8 +1,6 @@
 "use client";
 
-import HeroAnimation from "@/components/HeroAnimation";
-import BallpitBackground from "@/components/ballpit-background";
-
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -19,6 +17,19 @@ import {
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { StatusBadge } from "@/components/ui/status-badge";
+
+// Lazy-load heavy components (lottie-react ~50 KB + JSON animation)
+const HeroAnimation = dynamic(() => import("@/components/HeroAnimation"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 60, height: 60, borderRadius: "50%", border: "3px solid rgba(59,130,246,0.2)", borderTopColor: "var(--accent-blue)", animation: "spin 1s linear infinite" }} />
+    </div>
+  ),
+});
+const BallpitBackground = dynamic(() => import("@/components/ballpit-background"), {
+  ssr: false,
+});
 
 const stats = [
   { value: "14.5k+", label: "Molecules Analyzed", icon: Atom, change: "+12% this week" },

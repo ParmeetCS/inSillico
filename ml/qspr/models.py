@@ -22,7 +22,7 @@ from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor, XGBClassifier
 
-from .config import DEFAULT_RF_PARAMS, DEFAULT_XGB_PARAMS
+from .config import DEFAULT_RF_PARAMS, DEFAULT_XGB_PARAMS, XGB_EARLY_STOPPING_ROUNDS
 
 logger = logging.getLogger("qspr.models")
 
@@ -73,6 +73,8 @@ class QSPRModel(ABC):
         X_train: np.ndarray,
         y_train: np.ndarray,
         feature_names: Optional[list] = None,
+        X_val: Optional[np.ndarray] = None,
+        y_val: Optional[np.ndarray] = None,
     ) -> Dict:
         """
         Train the model: scale features, build estimator, fit.
@@ -81,6 +83,8 @@ class QSPRModel(ABC):
             X_train: Feature matrix (n_samples, n_features)
             y_train: Target array (n_samples,)
             feature_names: Optional list of feature names
+            X_val: Optional validation features (for early stopping)
+            y_val: Optional validation targets (for early stopping)
 
         Returns:
             Dict with training metadata
@@ -101,7 +105,7 @@ class QSPRModel(ABC):
         self.model.fit(X_scaled, y_train)
         self.is_fitted = True
 
-        logger.info(f"  {self.name} trained on {len(y_train):,} samples")
+        logger.info(f"  {self.name} trained on {len(y_train):,} samples ({X_train.shape[1]} features)")
 
         return {
             "model": self.name,
@@ -173,8 +177,8 @@ class RandomForestQSPR(QSPRModel):
 
     def _build_model(self):
         if self.task == "regression":
-            # Remove class_weight for regression (not applicable)
-            params = {k: v for k, v in self.params.items() if k != "class_weight"}
+            # Remove class_weight and oob_score for regression
+            params = {k: v for k, v in self.params.items() if k not in ("class_weight",)}
             return RandomForestRegressor(**params)
         else:
             return RandomForestClassifier(**self.params)
@@ -215,7 +219,7 @@ class RandomForestQSPR(QSPRModel):
 
 class XGBoostQSPR(QSPRModel):
     """
-    XGBoost model with staged prediction uncertainty.
+    XGBoost model with staged prediction uncertainty and early stopping.
 
     For uncertainty estimation, we use the variance of predictions
     across boosting stages. Early stages capture broad patterns;
@@ -224,11 +228,15 @@ class XGBoostQSPR(QSPRModel):
 
     For classification, we use 1 - max(predicted probability) as
     the uncertainty measure.
+
+    v4: Added early stopping support — training halts when validation
+    loss plateaus, preventing overfitting.
     """
 
     def __init__(self, task: str, params: Optional[Dict] = None):
         merged = {**DEFAULT_XGB_PARAMS, **(params or {})}
         super().__init__(task, merged)
+        self._early_stopping_rounds = XGB_EARLY_STOPPING_ROUNDS
 
     def _build_model(self):
         if self.task == "regression":
@@ -238,6 +246,89 @@ class XGBoostQSPR(QSPRModel):
             params["eval_metric"] = "logloss"
             return XGBClassifier(**params)
 
+    def fit(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        feature_names: Optional[list] = None,
+        X_val: Optional[np.ndarray] = None,
+        y_val: Optional[np.ndarray] = None,
+    ) -> Dict:
+        """
+        Train XGBoost with optional early stopping.
+
+        If X_val/y_val are provided, uses them for early stopping evaluation.
+        Otherwise, splits 10% of training data internally for early stopping.
+        """
+        self._feature_names = feature_names
+        self.model = self._build_model()
+
+        # Fit scaler on training data
+        X_scaled = self.scaler.fit_transform(X_train)
+
+        # Handle class imbalance for classification
+        if self.task == "classification" and hasattr(self.model, "scale_pos_weight"):
+            n_pos = np.sum(y_train == 1)
+            n_neg = np.sum(y_train == 0)
+            if n_pos > 0 and n_neg > 0:
+                self.model.set_params(scale_pos_weight=n_neg / n_pos)
+
+        # Early stopping: use provided validation set or split internally
+        fit_kwargs = {}
+        if X_val is not None and y_val is not None:
+            X_val_scaled = self.scaler.transform(X_val)
+            self.model.set_params(early_stopping_rounds=self._early_stopping_rounds)
+            fit_kwargs["eval_set"] = [(X_val_scaled, y_val)]
+            fit_kwargs["verbose"] = False
+        elif len(X_train) > 100:
+            # Auto-split 10% for early stopping
+            n_val = max(20, int(len(X_train) * 0.1))
+            rng = np.random.RandomState(42)
+            indices = rng.permutation(len(X_train))
+            val_idx = indices[:n_val]
+            train_idx = indices[n_val:]
+            X_scaled_train = X_scaled[train_idx]
+            y_train_sub = y_train[train_idx]
+            X_scaled_val = X_scaled[val_idx]
+            y_val_sub = y_train[val_idx]
+            self.model.set_params(early_stopping_rounds=self._early_stopping_rounds)
+            self.model.fit(
+                X_scaled_train, y_train_sub,
+                eval_set=[(X_scaled_val, y_val_sub)],
+                verbose=False,
+            )
+            self.is_fitted = True
+            best_iter = getattr(self.model, 'best_iteration', None)
+            logger.info(
+                f"  {self.name} trained on {len(y_train):,} samples "
+                f"({X_train.shape[1]} features)"
+                + (f", early stopped at {best_iter}" if best_iter else "")
+            )
+            return {
+                "model": self.name,
+                "task": self.task,
+                "n_samples": len(y_train),
+                "n_features": X_train.shape[1],
+                "best_iteration": best_iter,
+            }
+
+        self.model.fit(X_scaled, y_train, **fit_kwargs)
+        self.is_fitted = True
+
+        best_iter = getattr(self.model, 'best_iteration', None)
+        logger.info(
+            f"  {self.name} trained on {len(y_train):,} samples "
+            f"({X_train.shape[1]} features)"
+            + (f", early stopped at {best_iter}" if best_iter else "")
+        )
+        return {
+            "model": self.name,
+            "task": self.task,
+            "n_samples": len(y_train),
+            "n_features": X_train.shape[1],
+            "best_iteration": best_iter,
+        }
+
     def predict_with_uncertainty(
         self, X: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -246,15 +337,28 @@ class XGBoostQSPR(QSPRModel):
 
         Uses staged predictions at 25%, 50%, 75%, 100% of boosting rounds
         to estimate prediction stability.
+
+        v4: Uses best_iteration (from early stopping) instead of n_estimators
+        to avoid out-of-range errors when early stopping truncates the model.
         """
         if not self.is_fitted:
             raise RuntimeError("Model not fitted.")
 
         X_scaled = self.scaler.transform(X)
 
-        n_estimators = self.model.get_params().get("n_estimators", 100)
+        # Use the actual number of rounds (respects early stopping)
+        best_iter = getattr(self.model, 'best_iteration', None)
+        if best_iter is not None and best_iter > 0:
+            n_rounds = best_iter + 1  # best_iteration is 0-indexed
+        else:
+            # Fallback: query the booster for actual number of rounds
+            try:
+                n_rounds = self.model.get_booster().num_boosted_rounds()
+            except Exception:
+                n_rounds = self.model.get_params().get("n_estimators", 100)
+
         checkpoints = [
-            max(1, int(n_estimators * frac))
+            max(1, int(n_rounds * frac))
             for frac in [0.25, 0.5, 0.75, 1.0]
         ]
         # Remove duplicates while preserving order

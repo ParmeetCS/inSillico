@@ -17,6 +17,7 @@ rdkit                  # SMILES parsing, Morgan FP, molecular descriptors
 # ── ML Models ──
 xgboost>=2.0           # Gradient boosted trees
 scikit-learn>=1.4       # RandomForest, StandardScaler, metrics
+imbalanced-learn>=0.12  # SMOTE oversampling for imbalanced classification
 
 # ── Data ──
 pandas>=2.1

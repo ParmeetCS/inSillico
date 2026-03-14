@@ -6,20 +6,17 @@
  * 
  * Returns RDKit molecular descriptors used as features for QSPR prediction.
  * 
- * Fallback: Uses client-side mock descriptors if backend is unreachable.
+ * No mock fallback — all descriptors come from the real ML backend.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateMockDescriptors } from "@/lib/ml-mock";
 
-const ML_SERVER_URL = process.env.ML_BACKEND_URL || "http://localhost:5001";
+const ML_SERVER_URL = process.env.ML_BACKEND_URL || "https://insillico.onrender.com";
 
 export async function POST(req: NextRequest) {
-    let smiles = "";
-
     try {
         const body = await req.json();
-        smiles = body.smiles;
+        const { smiles } = body;
 
         if (!smiles) {
             return NextResponse.json(
@@ -28,9 +25,9 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Try to fetch from ML server with a timeout
+        // Render free tier can cold-start in ~30–60s — use generous timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000); // 2s timeout for descriptors
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout
 
         try {
             const response = await fetch(`${ML_SERVER_URL}/descriptors`, {
@@ -42,10 +39,7 @@ export async function POST(req: NextRequest) {
             clearTimeout(timeoutId);
 
             if (!response.ok) {
-                if (response.status >= 500) {
-                    throw new Error(`ML Server Error: ${response.statusText}`);
-                }
-                const err = await response.json().catch(() => ({ error: "ML server error" }));
+                const err = await response.json().catch(() => ({ error: `ML server error (${response.status})` }));
                 return NextResponse.json(err, { status: response.status });
             }
 
@@ -53,10 +47,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(data);
         } catch (fetchError) {
             clearTimeout(timeoutId);
-            // Fallback to mock descriptors
-            console.warn("ML Server unreachable or timed out for descriptors. Using mock fallback.", fetchError);
-            const mockData = generateMockDescriptors(smiles);
-            return NextResponse.json(mockData);
+            const isAbort = fetchError instanceof DOMException && fetchError.name === "AbortError";
+            console.error("ML Server error (descriptors):", fetchError);
+            return NextResponse.json(
+                {
+                    error: isAbort
+                        ? "ML server timed out. The server may be waking up from sleep — please try again in 30 seconds."
+                        : "ML server is unreachable. Please ensure the backend is running.",
+                },
+                { status: 503 }
+            );
         }
 
     } catch (error) {

@@ -79,7 +79,8 @@ export default function SimulationsPage() {
         setMolecules((molRes.data || []) as MoleculeRow[]);
         setSimulations((simRes.data || []) as unknown as SimulationRow[]);
         setLoading(false);
-    }, [user, supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user]);
 
     useEffect(() => {
         if (!authLoading && !user) { router.push("/auth/login"); return; }

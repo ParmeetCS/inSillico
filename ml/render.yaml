@@ -1,0 +1,37 @@
+# ═══════════════════════════════════════════════════════════════
+#  Render Blueprint — InSilico ML Backend
+#  https://render.com/docs/blueprint-spec
+# ═══════════════════════════════════════════════════════════════
+#  Usage: Push this repo to GitHub, then in Render dashboard
+#         → New → Blueprint → select this repo.
+#         Render auto-detects render.yaml and deploys.
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  - type: web
+    name: insillico-ml
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon                    # closest free-tier region to US
+    plan: free                        # 512 MB RAM, sleeps after 15 min
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: LOW_MEMORY
+        value: "1"                    # XGBoost-only mode (skip RF + ADMET)
+      # ── LLM for voice reasoning (set one of these) ──
+      - key: GROQ_API_KEY
+        sync: false                   # manually set in Render dashboard
+      - key: GROQ_MODEL
+        value: "openai/gpt-oss-120b"
+      # ── NVIDIA Riva ASR/TTS ──
+      - key: RIVA_API_URL
+        value: "grpc.nvcf.nvidia.com:443"
+      - key: RIVA_API_KEY
+        sync: false                   # nvapi-... key, set in dashboard
+      - key: RIVA_TTS_VOICE
+        value: "English-US.Female-1"
+      - key: RIVA_USE_SSL
+        value: "true"

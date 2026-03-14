@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
 import {
     Play, Atom, Thermometer, Gauge, Beaker, Zap, CheckCircle2,
     ChevronRight, Loader2, Copy, Pencil, FlaskConical,
@@ -11,12 +12,14 @@ import {
 import { GlassCard } from "@/components/ui/glass-card";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/components/ui/toast";
-import MoleculeViewer3D from "@/components/molecule-viewer-3d";
-import DrugLikenessGauge from "@/components/drug-likeness-gauge";
-import {
-    RadarPropertyChart, PropertyBarChart,
-    ToxicityGauges, SolubilityCurve,
-} from "@/components/plotly-charts";
+
+// Lazy-load heavy visualization components
+const MoleculeViewer3D = dynamic(() => import("@/components/molecule-viewer-3d"), { ssr: false });
+const DrugLikenessGauge = dynamic(() => import("@/components/drug-likeness-gauge"), { ssr: false });
+const RadarPropertyChart = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.RadarPropertyChart })), { ssr: false });
+const PropertyBarChart = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.PropertyBarChart })), { ssr: false });
+const ToxicityGauges = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.ToxicityGauges })), { ssr: false });
+const SolubilityCurve = dynamic(() => import("@/components/plotly-charts").then(m => ({ default: m.SolubilityCurve })), { ssr: false });
 
 /* ─── Demo Aspirin Data ─── */
 const ASPIRIN = {
@@ -158,39 +161,45 @@ export default function SimulationDemoPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ smiles: ASPIRIN.smiles }),
             });
-            if (res.ok) {
-                const data = await res.json();
-                setMlResults(data);
 
-                // Store drug-likeness data from ML response
-                if (data.drug_likeness) {
-                    setDrugLikenessData(data.drug_likeness);
-                }
-
-                // Save to Supabase for the Results page
-                const runtimeMs = Date.now() - startTime;
-                try {
-                    await fetch("/api/predict/save", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            smiles: ASPIRIN.smiles,
-                            molecule_name: data.molecule?.name || ASPIRIN.name,
-                            formula: data.molecule?.formula || ASPIRIN.formula,
-                            molecular_weight: data.molecule?.molecular_weight || ASPIRIN.mw,
-                            properties: data.properties,
-                            toxicity_screening: data.toxicity_screening || null,
-                            confidence: data.confidence || 94.8,
-                            runtime_ms: runtimeMs,
-                        }),
-                    });
-                } catch {
-                    console.warn("Failed to save prediction — results still shown");
-                }
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `ML server error (${res.status})`);
             }
-        } catch {
-            // ML server might not be running — use fallback
-            console.warn("ML server unavailable, using fallback data");
+
+            const data = await res.json();
+            setMlResults(data);
+
+            // Store drug-likeness data from ML response
+            if (data.drug_likeness) {
+                setDrugLikenessData(data.drug_likeness);
+            }
+
+            // Save to Supabase for the Results page
+            const runtimeMs = Date.now() - startTime;
+            try {
+                await fetch("/api/predict/save", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        smiles: ASPIRIN.smiles,
+                        molecule_name: data.molecule?.name || ASPIRIN.name,
+                        formula: data.molecule?.formula || ASPIRIN.formula,
+                        molecular_weight: data.molecule?.molecular_weight || ASPIRIN.mw,
+                        properties: data.properties,
+                        toxicity_screening: data.toxicity_screening || null,
+                        confidence: data.confidence || 94.8,
+                        runtime_ms: runtimeMs,
+                    }),
+                });
+            } catch {
+                console.warn("Failed to save prediction — results still shown");
+            }
+        } catch (err) {
+            haptic("error");
+            toast((err as Error).message || "ML server unavailable — please try again", "error");
+            setPhase("setup");
+            setProgress(0);
         }
     };
 
@@ -198,12 +207,20 @@ export default function SimulationDemoPage() {
         if (phase !== "running") return;
         const t = setInterval(() => {
             setProgress(p => {
+                // If we have results, speed to 100
+                if (mlResults && p < 100) {
+                    const next = Math.min(p + 2, 100);
+                    if (next >= 100) { clearInterval(t); setPhase("results"); }
+                    return next;
+                }
+                // Otherwise animate normally up to 85 and wait for ML backend
+                if (p >= 85 && !mlResults) return 85;
                 if (p >= 100) { clearInterval(t); setPhase("results"); return 100; }
                 return p + 1;
             });
         }, 250);
         return () => clearInterval(t);
-    }, [phase]);
+    }, [phase, mlResults]);
 
     /* ── Progressive feature reveal during running phase ── */
     useEffect(() => {
