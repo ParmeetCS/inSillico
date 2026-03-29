@@ -1,12 +1,39 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+const AUTH_REFRESH_TIMEOUT_MS = 1500;
+
+function isAbortError(error: unknown): boolean {
+    return error instanceof DOMException && error.name === "AbortError";
+}
+
 export async function middleware(request: NextRequest) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    // Fail open when auth env vars are not configured to avoid edge errors.
+    if (!supabaseUrl || !supabaseAnonKey) {
+        return NextResponse.next({ request });
+    }
+
     let supabaseResponse = NextResponse.next({ request });
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(
+        () => timeoutController.abort(),
+        AUTH_REFRESH_TIMEOUT_MS
+    );
+
+    if (!request.signal.aborted) {
+        request.signal.addEventListener(
+            "abort",
+            () => timeoutController.abort(),
+            { once: true }
+        );
+    }
 
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        supabaseUrl,
+        supabaseAnonKey,
         {
             cookies: {
                 getAll() {
@@ -24,9 +51,10 @@ export async function middleware(request: NextRequest) {
             },
             global: {
                 fetch: (input, init) => {
+                    const signal = init?.signal ?? timeoutController.signal;
                     return fetch(input, {
                         ...init,
-                        signal: request.signal,
+                        signal,
                     });
                 },
             },
@@ -36,12 +64,14 @@ export async function middleware(request: NextRequest) {
     try {
         await supabase.auth.getUser();
     } catch (error) {
-        // Gracefully handle AbortError when the middleware signal is aborted
-        if (error instanceof DOMException && error.name === "AbortError") {
+        // Avoid blocking requests if auth refresh times out.
+        if (isAbortError(error)) {
             return supabaseResponse;
         }
         // Re-throw unexpected errors
         throw error;
+    } finally {
+        clearTimeout(timeoutId);
     }
 
     return supabaseResponse;
@@ -49,6 +79,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
     matcher: [
-        "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+        "/dashboard/:path*",
+        "/simulations/:path*",
+        "/molecules/new/:path*",
+        "/copilot/:path*",
     ],
 };
